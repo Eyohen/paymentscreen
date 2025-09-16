@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coinley QR Code Generator</title>
+    <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #333;
+        }
+        input, select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            box-sizing: border-box;
+        }
+        button {
+            background: #7c3aed;
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+            margin: 10px 0;
+        }
+        button:hover {
+            background: #6d28d9;
+        }
+        .qr-container {
+            text-align: center;
+            margin-top: 30px;
+        }
+        .url-display {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 20px 0;
+            word-break: break-all;
+            font-family: monospace;
+            border: 1px solid #ddd;
+        }
+        h1 {
+            color: #7c3aed;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .preview {
+            background: #e8f4fd;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 15px 0;
+            border-left: 4px solid #7c3aed;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔗 Coinley Payment QR Generator</h1>
+
+        <form id="paymentForm">
+            <div class="form-group">
+                <label for="merchant">Merchant Name:</label>
+                <input type="text" id="merchant" value="Coffee Shop Demo" required>
+            </div>
+
+            <div class="form-group">
+                <label for="amount">Total Amount ($):</label>
+                <input type="number" id="amount" value="99.99" step="0.01" required>
+            </div>
+
+            <div class="form-group">
+                <label for="productAmount">Product Amount ($):</label>
+                <input type="number" id="productAmount" value="95.00" step="0.01" required>
+            </div>
+
+            <div class="form-group">
+                <label for="platformFee">Platform Fee ($):</label>
+                <input type="number" id="platformFee" value="2.99" step="0.01" required>
+            </div>
+
+            <div class="form-group">
+                <label for="networkFee">Network Fee ($):</label>
+                <input type="number" id="networkFee" value="2.00" step="0.01" required>
+            </div>
+
+            <div class="form-group">
+                <label for="token">Token:</label>
+                <select id="token" required>
+                    <option value="USDC">USDC</option>
+                    <option value="USDT">USDT</option>
+                    <option value="DAI">DAI</option>
+                    <option value="ETH">ETH</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="network">Network:</label>
+                <select id="network" required>
+                    <option value="Ethereum Mainnet">Ethereum Mainnet</option>
+                    <option value="Polygon">Polygon</option>
+                    <option value="BSC">BSC</option>
+                    <option value="Arbitrum">Arbitrum</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="merchantAddress">Smart Contract Address:</label>
+                <input type="text" id="merchantAddress" value="0x742d35cc6495c0a7c8b8e8dd90ec1dd4b1f0e3a8" placeholder="0x..." required>
+            </div>
+
+            <button type="button" onclick="generateQR()">🔗 Generate Payment QR Code</button>
+        </form>
+
+        <div id="result" style="display: none;">
+            <div class="preview">
+                <h3>📱 Generated Payment URL:</h3>
+                <div class="url-display" id="generatedUrl"></div>
+            </div>
+
+            <div class="qr-container">
+                <h3>📋 QR Code to Scan:</h3>
+                <canvas id="qrcode"></canvas>
+                <div style="margin-top: 15px;">
+                    <button type="button" onclick="downloadQR()">⬇️ Download QR Code</button>
+                    <button type="button" onclick="testURL()">🧪 Test URL</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const BASE_URL = 'https://paymentscreen.vercel.app/';
+
+        function generateQR() {
+            // Get form values
+            const merchant = document.getElementById('merchant').value;
+            const amount = document.getElementById('amount').value;
+            const productAmount = document.getElementById('productAmount').value;
+            const platformFee = document.getElementById('platformFee').value;
+            const networkFee = document.getElementById('networkFee').value;
+            const token = document.getElementById('token').value;
+            const network = document.getElementById('network').value;
+            const merchantAddress = document.getElementById('merchantAddress').value;
+
+            // Validate required fields
+            if (!merchant || !amount || !merchantAddress) {
+                alert('Please fill in all required fields');
+                return;
+            }
+
+            // Create URL with parameters
+            const params = new URLSearchParams({
+                merchant: merchant,
+                amount: amount,
+                productAmount: productAmount,
+                platformFee: platformFee,
+                networkFee: networkFee,
+                token: token,
+                network: network,
+                merchantAddress: merchantAddress
+            });
+
+            const paymentUrl = BASE_URL + '?' + params.toString();
+
+            // Display the URL
+            document.getElementById('generatedUrl').textContent = paymentUrl;
+
+            // Generate QR code
+            const canvas = document.getElementById('qrcode');
+            QRCode.toCanvas(canvas, paymentUrl, {
+                width: 300,
+                margin: 2,
+                color: {
+                    dark: '#7c3aed',
+                    light: '#ffffff'
+                }
+            }, function (error) {
+                if (error) {
+                    console.error('QR Code generation failed:', error);
+                    alert('Failed to generate QR code: ' + error.message);
+                } else {
+                    document.getElementById('result').style.display = 'block';
+                    console.log('QR Code generated successfully!');
+                }
+            });
+        }
+
+        function downloadQR() {
+            const canvas = document.getElementById('qrcode');
+            const link = document.createElement('a');
+            link.download = 'coinley-payment-qr.png';
+            link.href = canvas.toDataURL();
+            link.click();
+        }
+
+        function testURL() {
+            const url = document.getElementById('generatedUrl').textContent;
+            window.open(url, '_blank');
+        }
+
+        // Auto-calculate total when individual amounts change
+        document.getElementById('productAmount').addEventListener('input', updateTotal);
+        document.getElementById('platformFee').addEventListener('input', updateTotal);
+        document.getElementById('networkFee').addEventListener('input', updateTotal);
+
+        function updateTotal() {
+            const productAmount = parseFloat(document.getElementById('productAmount').value) || 0;
+            const platformFee = parseFloat(document.getElementById('platformFee').value) || 0;
+            const networkFee = parseFloat(document.getElementById('networkFee').value) || 0;
+            const total = (productAmount + platformFee + networkFee).toFixed(2);
+            document.getElementById('amount').value = total;
+        }
+    </script>
+</body>
+</html>
