@@ -8,6 +8,20 @@ import { parseUnits, erc20Abi } from 'viem';
 // Create a QueryClient instance
 const queryClient = new QueryClient();
 
+// Helper function to detect mobile device
+const isMobile = () => {
+  return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+};
+
+// Helper function to detect if we're inside a mobile wallet browser
+const isInWalletBrowser = () => {
+  const userAgent = navigator.userAgent.toLowerCase();
+  return userAgent.includes('metamask') ||
+         userAgent.includes('trustwallet') ||
+         userAgent.includes('coinbasewallet') ||
+         typeof window.ethereum !== 'undefined';
+};
+
 // Helper function to extract URL parameters
 const getUrlParams = () => {
   const params = new URLSearchParams(window.location.search);
@@ -48,17 +62,67 @@ const PaymentFlow = () => {
   const [writeError, setWriteError] = useState(null);
   const [approvalHash, setApprovalHash] = useState(null);
   const [paymentHash, setPaymentHash] = useState(null);
+  const [connectionAttempts, setConnectionAttempts] = useState(0);
 
-  // Auto-connect wallet on mount
+  // Auto-connect wallet on mount with mobile handling
   useEffect(() => {
     if (!isConnected && connectors.length > 0) {
-      // Try to connect with the first available connector (usually injected wallet)
-      const injectedConnector = connectors.find(c => c.id === 'injected');
-      if (injectedConnector) {
-        connect({ connector: injectedConnector });
+      const mobile = isMobile();
+      const inWallet = isInWalletBrowser();
+
+      console.log('Device info:', { mobile, inWallet, userAgent: navigator.userAgent });
+
+      if (mobile && inWallet) {
+        // We're inside a mobile wallet browser, try to connect immediately
+        const injectedConnector = connectors.find(c => c.id === 'injected');
+        const trustConnector = connectors.find(c => c.id === 'trustWallet');
+
+        if (trustConnector && navigator.userAgent.toLowerCase().includes('trust')) {
+          connect({ connector: trustConnector });
+        } else if (injectedConnector) {
+          connect({ connector: injectedConnector });
+        }
+      } else if (mobile && !inWallet) {
+        // Mobile device but not in wallet browser - show wallet selection
+        setCurrentStep('wallet-select');
+      } else {
+        // Desktop - try auto-connect
+        const injectedConnector = connectors.find(c => c.id === 'injected');
+        if (injectedConnector) {
+          connect({ connector: injectedConnector });
+        }
       }
     }
   }, [connectors, connect, isConnected]);
+
+  // Handle window focus to retry connection after returning from wallet app
+  useEffect(() => {
+    const handleFocus = () => {
+      const mobile = isMobile();
+      const inWallet = isInWalletBrowser();
+
+      if (mobile && !isConnected && connectionAttempts < 3 && currentStep === 'approval') {
+        console.log('Window focused, attempting connection retry...');
+        setConnectionAttempts(prev => prev + 1);
+
+        setTimeout(() => {
+          if (connectors.length > 0) {
+            const injectedConnector = connectors.find(c => c.id === 'injected');
+            const trustConnector = connectors.find(c => c.id === 'trustWallet');
+
+            if (trustConnector && navigator.userAgent.toLowerCase().includes('trust')) {
+              connect({ connector: trustConnector });
+            } else if (injectedConnector) {
+              connect({ connector: injectedConnector });
+            }
+          }
+        }, 1000);
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [isConnected, connectors, connect, connectionAttempts, currentStep]);
 
   // Handle successful connection
   useEffect(() => {
@@ -505,6 +569,95 @@ const PaymentFlow = () => {
     </div>
   );
 
+  const WalletSelectStep = () => (
+    <div className="text-center animate-fade-in">
+      <div className="mb-6">
+        <div className="w-20 h-20 mx-auto bg-blue-500 rounded-full flex items-center justify-center">
+          <svg className="w-12 h-12 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 11c0 3.517-1.009 6.799-2.753 9.571m-3.44-2.04l.054-.09A13.916 13.916 0 008 11a4 4 0 118 0c0 1.017-.07 2.019-.203 3m-2.118 6.844A21.88 21.88 0 0015.171 17m3.839 1.132c.645-2.266.99-4.659.99-7.132A8 8 0 008 4.07M3 15.364c.64-1.319 1-2.8 1-4.364 0-1.457.39-2.823 1.07-4"></path>
+          </svg>
+        </div>
+      </div>
+
+      <h2 className="text-2xl font-bold text-gray-800 mb-2">Choose Your Wallet</h2>
+      <p className="text-gray-600 mb-6">Select how you want to connect and pay</p>
+
+      <div className="space-y-4">
+        <button
+          onClick={() => {
+            // Try multiple MetaMask deep link patterns
+            const urls = [
+              `metamask://dapp/${window.location.host}${window.location.pathname}${window.location.search}`,
+              `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}${window.location.search}`,
+            ];
+
+            // Try the deep link first, then fallback
+            window.location.href = urls[0];
+
+            // Fallback after a short delay
+            setTimeout(() => {
+              if (!document.hidden) {
+                window.location.href = urls[1];
+              }
+            }, 2500);
+          }}
+          className="block w-full bg-orange-500 text-white py-4 px-6 rounded-xl font-semibold hover:bg-orange-600 transition-colors"
+        >
+          Open in MetaMask
+        </button>
+
+        <button
+          onClick={() => {
+            const trustUrl = `https://link.trustwallet.com/open_url?coin_id=60&url=${encodeURIComponent(window.location.href)}`;
+            window.location.href = trustUrl;
+
+            // Set a timeout to retry connection
+            setTimeout(() => {
+              setCurrentStep('approval');
+            }, 3000);
+          }}
+          className="block w-full bg-blue-600 text-white py-4 px-6 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
+        >
+          Open in Trust Wallet
+        </button>
+
+        <button
+          onClick={() => {
+            const coinbaseUrl = `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(window.location.href)}`;
+            window.location.href = coinbaseUrl;
+
+            // Set a timeout to retry connection
+            setTimeout(() => {
+              setCurrentStep('approval');
+            }, 3000);
+          }}
+          className="block w-full bg-indigo-600 text-white py-4 px-6 rounded-xl font-semibold hover:bg-indigo-700 transition-colors"
+        >
+          Open in Coinbase Wallet
+        </button>
+
+        <button
+          onClick={() => setCurrentStep('approval')}
+          className="block w-full bg-gray-300 text-gray-700 py-3 px-6 rounded-xl font-semibold hover:bg-gray-400 transition-colors"
+        >
+          I have a wallet installed
+        </button>
+      </div>
+
+      <div className="mt-6 text-xs text-gray-500">
+        <p>Don't have a wallet?</p>
+        <a
+          href="https://metamask.io/download/"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-purple-600 underline"
+        >
+          Install MetaMask
+        </a>
+      </div>
+    </div>
+  );
+
   const NoWalletStep = () => (
     <div className="text-center animate-fade-in">
       <div className="mb-6">
@@ -548,6 +701,7 @@ const PaymentFlow = () => {
         {currentStep === 'payment' && <PaymentStep />}
         {currentStep === 'success' && <SuccessStep />}
         {currentStep === 'failure' && <FailureStep />}
+        {currentStep === 'wallet-select' && <WalletSelectStep />}
         {currentStep === 'no-wallet' && <NoWalletStep />}
       </div>
     </div>
