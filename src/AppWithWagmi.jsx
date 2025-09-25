@@ -22,6 +22,84 @@ const isInWalletBrowser = () => {
          typeof window.ethereum !== 'undefined';
 };
 
+// Simple API client for backend communication
+const notifyBackend = async (paymentId, transactionHash, networkName, senderAddress, apiCredentials) => {
+  if (!paymentId) {
+    console.warn('⚠️ No payment ID provided for backend notification');
+    return;
+  }
+
+  const { apiKey, apiSecret, apiUrl } = apiCredentials;
+
+  try {
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+
+    // Add API keys if available
+    if (apiKey && apiSecret) {
+      headers['X-API-Key'] = apiKey;
+      headers['X-API-Secret'] = apiSecret;
+      console.log('🔑 Using API credentials from URL parameters');
+    } else {
+      console.warn('⚠️ No API credentials found in URL parameters');
+    }
+
+    const response = await fetch(`${apiUrl}/api/payments/process`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        paymentId: paymentId,
+        transactionHash: transactionHash,
+        network: networkName,
+        senderAddress: senderAddress,
+        source: 'payment_screen' // Identify this as coming from payment screen
+      })
+    });
+
+    if (response.ok) {
+      const result = await response.json();
+      console.log('✅ Backend notified successfully:', result);
+      return result;
+    } else if (response.status === 401 || response.status === 403) {
+      console.error('❌ Backend authentication failed');
+      console.error('❌ Check if API keys are correctly passed in QR code URL');
+      throw new Error('Backend authentication failed');
+    } else {
+      console.error('❌ Backend notification failed:', response.status);
+      const errorText = await response.text();
+      console.error('❌ Error details:', errorText);
+      throw new Error(`Backend error: ${response.status}`);
+    }
+  } catch (error) {
+    console.error('❌ Failed to notify backend:', error);
+    throw error;
+  }
+};
+
+// Helper function to get network short name from chainId
+const getNetworkShortName = (chainId) => {
+  const networks = {
+    1: 'ethereum',
+    56: 'bsc',
+    137: 'polygon',
+    42161: 'arbitrum',
+    10: 'optimism',
+    43114: 'avalanche',
+    42220: 'celo'
+  };
+  return networks[parseInt(chainId)] || 'ethereum';
+};
+
+// Helper function to get API credentials from environment variables
+const getApiCredentials = () => {
+  return {
+    apiKey: process.env.REACT_APP_COINLEY_API_KEY || '',
+    apiSecret: process.env.REACT_APP_COINLEY_API_SECRET || '',
+    apiUrl: process.env.REACT_APP_COINLEY_API_URL || 'https://coinley-backend-production.up.railway.app'
+  };
+};
+
 // Helper function to extract URL parameters
 const getUrlParams = () => {
   const params = new URLSearchParams(window.location.search);
@@ -66,11 +144,18 @@ const PaymentFlow = () => {
 
   // Debug logging on mount
   useEffect(() => {
+    const apiCredentials = getApiCredentials();
     console.log('Payment data:', paymentData);
     console.log('Chain ID:', paymentData.chainId);
     console.log('Token:', paymentData.token);
     console.log('Token Contract:', paymentData.tokenContract);
     console.log('Payment Contract:', paymentData.contractAddress);
+    console.log('API Credentials (from .env):', {
+      hasApiKey: !!apiCredentials.apiKey,
+      apiKeyLength: apiCredentials.apiKey ? apiCredentials.apiKey.length : 0,
+      hasApiSecret: !!apiCredentials.apiSecret,
+      apiUrl: apiCredentials.apiUrl
+    });
   }, [paymentData]);
 
   // Auto-connect wallet on mount with mobile handling
@@ -371,6 +456,17 @@ const PaymentFlow = () => {
 
       setPaymentHash(splitHash);
       console.log('Split payment transaction hash:', splitHash);
+
+      // Notify backend that payment is completed (matching SDK processPayment parameters)
+      try {
+        console.log('📤 Notifying backend of successful payment...');
+        const networkName = getNetworkShortName(paymentData.chainId);
+        const apiCredentials = getApiCredentials();
+        await notifyBackend(paymentData.paymentId, splitHash, networkName, address, apiCredentials);
+      } catch (backendError) {
+        console.error('⚠️ Backend notification failed, but payment was successful:', backendError);
+        // Don't fail the transaction just because backend notification failed
+      }
 
       setWriteSuccess(true);
       setCurrentStep('success');
