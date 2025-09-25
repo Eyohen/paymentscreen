@@ -2,11 +2,21 @@ import { createConfig, http } from 'wagmi';
 import { mainnet, bsc, polygon, arbitrum, optimism, avalanche } from 'wagmi/chains';
 import { injected, walletConnect, coinbaseWallet } from 'wagmi/connectors';
 
+// Trust Wallet connector
+const trustWallet = () => injected({
+  target: () => ({
+    id: 'trustWallet',
+    name: 'Trust Wallet',
+    provider: typeof window !== 'undefined' ? window.trustwallet : undefined,
+  })
+});
+
 // Create wagmi config with multiple chains
 export const config = createConfig({
   chains: [mainnet, bsc, polygon, arbitrum, optimism, avalanche],
   connectors: [
     injected(),
+    trustWallet(),
     walletConnect({
       projectId: 'YOUR_PROJECT_ID' // You'll need to get this from WalletConnect
     }),
