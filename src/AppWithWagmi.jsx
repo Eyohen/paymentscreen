@@ -64,6 +64,15 @@ const PaymentFlow = () => {
   const [paymentHash, setPaymentHash] = useState(null);
   const [connectionAttempts, setConnectionAttempts] = useState(0);
 
+  // Debug logging on mount
+  useEffect(() => {
+    console.log('Payment data:', paymentData);
+    console.log('Chain ID:', paymentData.chainId);
+    console.log('Token:', paymentData.token);
+    console.log('Token Contract:', paymentData.tokenContract);
+    console.log('Payment Contract:', paymentData.contractAddress);
+  }, [paymentData]);
+
   // Auto-connect wallet on mount with mobile handling
   useEffect(() => {
     if (!isConnected && connectors.length > 0) {
