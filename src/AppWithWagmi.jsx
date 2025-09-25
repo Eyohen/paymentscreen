@@ -103,11 +103,27 @@ const PaymentFlow = () => {
       setIsWriting(true);
       setWriteError(null);
 
-      // Step 1: Approve the PaymentSplitter contract to spend tokens
-      console.log('Step 1: Approving token spending...');
-
+      // Step 0: Check user's token balance first
       const decimals = getTokenDecimals(paymentData.token);
       const amountInUnits = parseUnits(paymentData.amount, decimals);
+
+      console.log('Step 0: Checking token balance...');
+      const balance = await readContract(config, {
+        address: paymentData.tokenContract,
+        abi: erc20Abi,
+        functionName: 'balanceOf',
+        args: [address]
+      });
+
+      console.log('User balance:', balance.toString());
+      console.log('Required amount:', amountInUnits.toString());
+
+      if (balance < amountInUnits) {
+        throw new Error(`Insufficient ${paymentData.token} balance. You have ${(Number(balance) / 10**decimals).toFixed(decimals)} ${paymentData.token}, but need ${paymentData.amount} ${paymentData.token}`);
+      }
+
+      // Step 1: Approve the PaymentSplitter contract to spend tokens
+      console.log('Step 1: Approving token spending...');
 
       // Check if we need approval
       const allowance = await readContract(config, {
@@ -142,7 +158,22 @@ const PaymentFlow = () => {
 
     } catch (error) {
       console.error('Transaction failed:', error);
-      setWriteError(error);
+
+      // Parse and improve error messages
+      let userFriendlyError = error;
+      if (error.message) {
+        if (error.message.includes('transfer amount exceeds balance')) {
+          userFriendlyError = new Error(`Insufficient ${paymentData.token} balance. Please add more ${paymentData.token} to your wallet and try again.`);
+        } else if (error.message.includes('User rejected')) {
+          userFriendlyError = new Error('Transaction was cancelled by user.');
+        } else if (error.message.includes('insufficient funds')) {
+          userFriendlyError = new Error('Insufficient funds for gas fees. Please add more native tokens (ETH, MATIC, etc.) to your wallet.');
+        } else if (error.message.includes('network')) {
+          userFriendlyError = new Error('Network error. Please check your connection and try again.');
+        }
+      }
+
+      setWriteError(userFriendlyError);
       setCurrentStep('failure');
       setProcessing(false);
       setIsWriting(false);
@@ -245,15 +276,25 @@ const PaymentFlow = () => {
       console.log('Payment details:', paymentDetails);
 
       // Simulate first to check for errors
-      const { request } = await simulateContract(config, {
-        address: paymentData.contractAddress,
-        abi: splitPaymentAbi,
-        functionName: 'splitPayment',
-        args: [paymentDetails]
-      });
+      let splitHash;
+      try {
+        const { request } = await simulateContract(config, {
+          address: paymentData.contractAddress,
+          abi: splitPaymentAbi,
+          functionName: 'splitPayment',
+          args: [paymentDetails],
+          account: address
+        });
 
-      // Execute the transaction
-      const splitHash = await writeContract(config, request);
+        // Execute the transaction
+        splitHash = await writeContract(config, request);
+      } catch (simulationError) {
+        console.error('Simulation failed:', simulationError);
+        if (simulationError.message.includes('transfer amount exceeds balance')) {
+          throw new Error(`Insufficient ${paymentData.token} balance. You need ${paymentData.amount} ${paymentData.token} but may not have enough in your wallet.`);
+        }
+        throw simulationError;
+      }
 
       setPaymentHash(splitHash);
       console.log('Split payment transaction hash:', splitHash);
