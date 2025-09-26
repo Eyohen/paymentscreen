@@ -121,7 +121,15 @@ const getUrlParams = () => {
     recipient1: params.get('recipient1') || params.get('merchantAddress') || '',
     recipient2: params.get('recipient2') || params.get('platformWallet') || '',
     recipient3: params.get('recipient3') || params.get('networkWallet') || '',
-    paymentId: params.get('paymentId') || ''
+    paymentId: params.get('paymentId') || '',
+    // Backend-calculated percentages (in basis points: 10000 = 100%)
+    recipient1Percentage: params.get('recipient1Percentage') || '',
+    recipient2Percentage: params.get('recipient2Percentage') || '',
+    recipient3Percentage: params.get('recipient3Percentage') || '0',
+    // Additional backend data
+    splitterPaymentId: params.get('splitterPaymentId') || '',
+    tokenDecimals: params.get('tokenDecimals') || '6',
+    amountInWei: params.get('amountInWei') || '' // Exact amount from backend
   };
 };
 
@@ -368,54 +376,56 @@ const PaymentFlow = () => {
         }
       ];
 
-      const decimals = getTokenDecimals(paymentData.token);
-      const amountInUnits = parseUnits(paymentData.amount, decimals);
+      // Use exact amount and decimals from backend if available
+      const decimals = parseInt(paymentData.tokenDecimals) || getTokenDecimals(paymentData.token);
+      const amountInUnits = paymentData.amountInWei && paymentData.amountInWei !== ''
+        ? BigInt(paymentData.amountInWei)
+        : parseUnits(paymentData.amount, decimals);
 
-      // Calculate percentages (basis points - 10000 = 100%)
-      const totalAmount = parseFloat(paymentData.amount);
-      const productAmount = parseFloat(paymentData.productAmount);
-      const platformAmount = parseFloat(paymentData.platformFee);
-      const networkAmount = parseFloat(paymentData.networkFee);
+      // ALWAYS use backend-provided percentages - NO FALLBACK CALCULATIONS
+      const productPercentage = parseInt(paymentData.recipient1Percentage) || 10000;
+      const platformPercentage = parseInt(paymentData.recipient2Percentage) || 0;
+      const networkPercentage = parseInt(paymentData.recipient3Percentage) || 0;
 
-      // Handle case where fees might be 0
-      let productPercentage, platformPercentage, networkPercentage;
+      console.log('🎯 Using EXACT backend data:', {
+        paymentId: paymentData.paymentId,
+        amountInWei: amountInUnits.toString(),
+        decimals: decimals,
+        recipient1: paymentData.recipient1,
+        recipient2: paymentData.recipient2,
+        recipient3: paymentData.recipient3,
+        recipient1Percentage: productPercentage,
+        recipient2Percentage: platformPercentage,
+        recipient3Percentage: networkPercentage,
+        totalPercentage: productPercentage + platformPercentage + networkPercentage
+      });
 
-      if (platformAmount === 0 && networkAmount === 0) {
-        // If no fees, merchant gets 100%
-        productPercentage = 10000;
-        platformPercentage = 0;
-        networkPercentage = 0;
-      } else {
-        productPercentage = Math.floor((productAmount / totalAmount) * 10000);
-        platformPercentage = Math.floor((platformAmount / totalAmount) * 10000);
-        networkPercentage = Math.floor((networkAmount / totalAmount) * 10000);
-
-        // Ensure total is exactly 10000 (adjust any rounding errors)
-        const calculatedTotal = productPercentage + platformPercentage + networkPercentage;
-        if (calculatedTotal !== 10000) {
-          productPercentage += (10000 - calculatedTotal);
-        }
+      // Validate that we have all required backend data
+      if (!paymentData.recipient1 || !paymentData.recipient1Percentage) {
+        throw new Error('Missing backend payment data. QR code may be outdated.');
       }
 
-      // Use payment ID from URL or generate unique one
-      const paymentId = paymentData.paymentId || `PAY-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      // Use exact payment ID from backend - NO FALLBACK
+      const paymentId = paymentData.paymentId && paymentData.paymentId.trim() !== ''
+        ? paymentData.paymentId
+        : (() => { throw new Error('Payment ID missing from backend data'); })();
 
-      // Determine recipient addresses
-      const recipient1 = paymentData.recipient1 || paymentData.merchantAddress;
-      const recipient2 = paymentData.recipient2 || paymentData.platformWallet || paymentData.merchantAddress; // fallback to merchant if no platform wallet
-      const recipient3 = paymentData.recipient3 || paymentData.networkWallet || '0x0000000000000000000000000000000000000000'; // zero address if no network wallet
+      console.log('🔍 Using EXACT payment ID from backend:', paymentId);
+      console.log('🔍 Splitter Payment ID:', paymentData.splitterPaymentId);
 
-      console.log('Payment calculation details:', {
-        totalAmount,
-        productAmount,
-        platformAmount,
-        networkAmount,
-        productPercentage,
-        platformPercentage,
-        networkPercentage,
-        recipient1,
-        recipient2,
-        recipient3
+      // Use EXACT recipient addresses from backend - NO FALLBACKS
+      const recipient1 = paymentData.recipient1;
+      const recipient2 = paymentData.recipient2;
+      const recipient3 = paymentData.recipient3;
+
+      console.log('🏗️ Contract call details:', {
+        contractAddress: paymentData.contractAddress,
+        tokenContract: paymentData.tokenContract,
+        paymentId: paymentId,
+        recipient1: recipient1,
+        recipient2: recipient2,
+        recipient3: recipient3,
+        percentages: `${productPercentage}|${platformPercentage}|${networkPercentage}`
       });
 
       // Create the tuple parameter
@@ -460,9 +470,11 @@ const PaymentFlow = () => {
       // Notify backend that payment is completed (matching SDK processPayment parameters)
       try {
         console.log('📤 Notifying backend of successful payment...');
+        console.log('📤 Using payment ID for backend:', paymentId);
+        console.log('📤 Transaction hash:', splitHash);
         const networkName = getNetworkShortName(paymentData.chainId);
         const apiCredentials = getApiCredentials();
-        await notifyBackend(paymentData.paymentId, splitHash, networkName, address, apiCredentials);
+        await notifyBackend(paymentId, splitHash, networkName, address, apiCredentials);
       } catch (backendError) {
         console.error('⚠️ Backend notification failed, but payment was successful:', backendError);
         // Don't fail the transaction just because backend notification failed
