@@ -148,6 +148,11 @@ const PaymentFlow = () => {
   const [paymentHash, setPaymentHash] = useState(null);
   const [connectionAttempts, setConnectionAttempts] = useState(0);
 
+  // Address persistence to handle reconnection issues
+  const [persistedAddress, setPersistedAddress] = useState(
+    () => localStorage.getItem('coinley_wallet_address') || null
+  );
+
   // Error logging system for mobile debugging
   const [errorLogs, setErrorLogs] = useState([]);
   const [showErrorPanel, setShowErrorPanel] = useState(false);
@@ -219,6 +224,20 @@ const PaymentFlow = () => {
       window.removeEventListener('unhandledrejection', handleUnhandledRejection);
     };
   }, []);
+
+  // Address persistence effect
+  useEffect(() => {
+    if (address && address !== persistedAddress) {
+      console.log('✅ Address connected and persisted:', address);
+      setPersistedAddress(address);
+      localStorage.setItem('coinley_wallet_address', address);
+    } else if (!address && persistedAddress) {
+      console.warn('⚠️ Address lost from wagmi but have persisted address:', persistedAddress);
+    }
+  }, [address, persistedAddress]);
+
+  // Get effective address (wagmi address or persisted)
+  const effectiveAddress = address || persistedAddress;
 
   // Debug logging on mount
   useEffect(() => {
@@ -315,19 +334,56 @@ const PaymentFlow = () => {
 
   // Handle successful connection
   useEffect(() => {
-    if (isConnected && address) {
+    if (isConnected && effectiveAddress) {
+      console.log('🎯 Connection successful with address:', effectiveAddress);
       // Check if we're on the right chain
       const targetChainId = parseInt(paymentData.chainId);
       if (chain?.id !== targetChainId) {
+        console.log(`🔗 Switching to chain ${targetChainId} from ${chain?.id}`);
         switchChain({ chainId: targetChainId });
       } else {
         // Start the automatic approval process
+        console.log('🚀 Chain correct, starting automatic approval in 1.5s...');
         setTimeout(() => {
           handleAutomaticApproval();
         }, 1500);
       }
+    } else if (!isConnected && effectiveAddress) {
+      console.warn('⚠️ Have address but not connected - attempting reconnection...');
     }
-  }, [isConnected, address, chain, paymentData.chainId]);
+  }, [isConnected, effectiveAddress, chain, paymentData.chainId]);
+
+  // Trust Wallet specific auto-retry mechanism
+  useEffect(() => {
+    const isTrustWallet = navigator.userAgent.toLowerCase().includes('trust');
+
+    if (isTrustWallet && !isConnected && connectionAttempts < 5) {
+      console.log('🛡️ Trust Wallet detected - attempting auto-connection retry in 3s...');
+
+      const retryTimer = setTimeout(() => {
+        const trustConnector = connectors.find(c => c.id === 'trustWallet');
+        const injectedConnector = connectors.find(c => c.id === 'injected');
+
+        if (trustConnector) {
+          console.log('🛡️ Auto-retrying Trust Wallet connector');
+          setConnectionAttempts(prev => prev + 1);
+          connect({ connector: trustConnector }).catch(err => {
+            console.error('❌ Trust Wallet auto-retry failed:', err);
+
+            // Fallback to injected if Trust connector fails
+            if (injectedConnector) {
+              console.log('🔄 Falling back to injected connector');
+              connect({ connector: injectedConnector }).catch(fallbackErr => {
+                console.error('❌ Injected fallback failed:', fallbackErr);
+              });
+            }
+          });
+        }
+      }, 3000);
+
+      return () => clearTimeout(retryTimer);
+    }
+  }, [connectors, connect, isConnected, connectionAttempts]);
 
   // Get token decimals based on token symbol
   const getTokenDecimals = (tokenSymbol) => {
@@ -354,7 +410,19 @@ const PaymentFlow = () => {
 
   // Execute approval and payment in sequence
   const executeApprovalAndPayment = async () => {
+    // Critical: Check if we have an address before proceeding
+    if (!effectiveAddress) {
+      const errorMsg = 'Cannot execute payment: No wallet address available. Please reconnect your wallet.';
+      console.error('❌', errorMsg);
+      setWriteError(new Error(errorMsg));
+      setCurrentStep('failure');
+      setProcessing(false);
+      setIsWriting(false);
+      return;
+    }
+
     try {
+      console.log('📋 Starting approval and payment with address:', effectiveAddress);
       setIsWriting(true);
       setWriteError(null);
 
@@ -367,7 +435,7 @@ const PaymentFlow = () => {
         address: paymentData.tokenContract,
         abi: erc20Abi,
         functionName: 'balanceOf',
-        args: [address]
+        args: [effectiveAddress]
       });
 
       console.log('User balance:', balance.toString());
@@ -385,7 +453,7 @@ const PaymentFlow = () => {
         address: paymentData.tokenContract,
         abi: erc20Abi,
         functionName: 'allowance',
-        args: [address, paymentData.contractAddress]
+        args: [effectiveAddress, paymentData.contractAddress]
       });
 
       console.log('Current allowance:', allowance.toString());
@@ -445,7 +513,22 @@ const PaymentFlow = () => {
 
   // Execute the splitPayment function
   const executeSplitPayment = async () => {
+    // Additional safety checks
+    if (!effectiveAddress) {
+      throw new Error('No wallet address available for split payment');
+    }
+
+    if (!paymentData.contractAddress || !paymentData.tokenContract) {
+      throw new Error('Missing contract addresses for payment execution');
+    }
+
     try {
+      console.log('🏗️ Executing split payment with verified data:', {
+        userAddress: effectiveAddress,
+        contractAddress: paymentData.contractAddress,
+        tokenContract: paymentData.tokenContract,
+        chainId: chain?.id
+      });
       // PaymentSplitter ABI for splitPayment function with tuple parameter
       const splitPaymentAbi = [
         {
@@ -549,7 +632,7 @@ const PaymentFlow = () => {
           abi: splitPaymentAbi,
           functionName: 'splitPayment',
           args: [paymentDetails],
-          account: address
+          account: effectiveAddress
         });
         console.log('✅ Simulation successful, executing transaction...');
 
@@ -580,7 +663,7 @@ const PaymentFlow = () => {
         console.log('📤 Transaction hash:', splitHash);
         const networkName = getNetworkShortName(paymentData.chainId);
         const apiCredentials = getApiCredentials();
-        await notifyBackend(paymentId, splitHash, networkName, address, apiCredentials);
+        await notifyBackend(paymentId, splitHash, networkName, effectiveAddress, apiCredentials);
       } catch (backendError) {
         console.error('⚠️ Backend notification failed, but payment was successful:', backendError);
         // Don't fail the transaction just because backend notification failed
@@ -637,9 +720,9 @@ const PaymentFlow = () => {
         {isConnected ? 'Please approve the transaction in your wallet' : 'Connecting to your wallet automatically'}
       </p>
 
-      {isConnected && address && (
+      {isConnected && effectiveAddress && (
         <div className="text-sm text-gray-500 mb-4">
-          Connected: {address.slice(0, 6)}...{address.slice(-4)}
+          Connected: {effectiveAddress.slice(0, 6)}...{effectiveAddress.slice(-4)}
         </div>
       )}
 
@@ -858,8 +941,6 @@ const PaymentFlow = () => {
                   window.location.href = coinbaseUrl;
                   setTimeout(() => connect({ connector }), 3000);
                 }};
-              case 'walletConnect':
-                return { name: 'WalletConnect', color: 'bg-blue-500', action: () => connect({ connector }) };
               default:
                 return { name: connector.name, color: 'bg-gray-600', action: () => connect({ connector }) };
             }
