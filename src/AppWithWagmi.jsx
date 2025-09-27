@@ -148,6 +148,78 @@ const PaymentFlow = () => {
   const [paymentHash, setPaymentHash] = useState(null);
   const [connectionAttempts, setConnectionAttempts] = useState(0);
 
+  // Error logging system for mobile debugging
+  const [errorLogs, setErrorLogs] = useState([]);
+  const [showErrorPanel, setShowErrorPanel] = useState(false);
+
+  // Capture all console errors and add to UI
+  useEffect(() => {
+    const originalError = console.error;
+    const originalWarn = console.warn;
+    const originalLog = console.log;
+
+    const addToErrorLog = (type, message, ...args) => {
+      const timestamp = new Date().toLocaleTimeString();
+      const fullMessage = [message, ...args].join(' ');
+
+      setErrorLogs(prev => [...prev, {
+        type,
+        message: fullMessage,
+        timestamp,
+        id: Date.now() + Math.random()
+      }].slice(-50)); // Keep last 50 entries
+    };
+
+    // Override console methods
+    console.error = (message, ...args) => {
+      originalError(message, ...args);
+      addToErrorLog('error', message, ...args);
+    };
+
+    console.warn = (message, ...args) => {
+      originalWarn(message, ...args);
+      addToErrorLog('warn', message, ...args);
+    };
+
+    console.log = (message, ...args) => {
+      originalLog(message, ...args);
+      // Only log certain messages to avoid spam
+      if (typeof message === 'string' && (
+        message.includes('🔍') ||
+        message.includes('❌') ||
+        message.includes('✅') ||
+        message.includes('⚠️') ||
+        message.includes('🎯') ||
+        message.includes('🚀') ||
+        message.includes('📋') ||
+        message.includes('Step')
+      )) {
+        addToErrorLog('info', message, ...args);
+      }
+    };
+
+    // Capture unhandled errors
+    const handleError = (event) => {
+      addToErrorLog('error', 'Unhandled Error:', event.error?.message || event.message);
+    };
+
+    const handleUnhandledRejection = (event) => {
+      addToErrorLog('error', 'Unhandled Promise Rejection:', event.reason?.message || event.reason);
+    };
+
+    window.addEventListener('error', handleError);
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
+    // Cleanup
+    return () => {
+      console.error = originalError;
+      console.warn = originalWarn;
+      console.log = originalLog;
+      window.removeEventListener('error', handleError);
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
+  }, []);
+
   // Debug logging on mount
   useEffect(() => {
     const apiCredentials = getApiCredentials();
@@ -181,19 +253,32 @@ const PaymentFlow = () => {
 
       // Try wallet-specific connectors first based on detection
       if (isTrustWalletUA && trustConnector) {
-        connect({ connector: trustConnector });
+        console.log('🛡️ Connecting with Trust Wallet connector');
+        connect({ connector: trustConnector }).catch(err => {
+          console.error('❌ Trust Wallet connection failed:', err);
+        });
       } else if (isCoinbaseUA && coinbaseConnector) {
-        connect({ connector: coinbaseConnector });
+        console.log('💙 Connecting with Coinbase Wallet connector');
+        connect({ connector: coinbaseConnector }).catch(err => {
+          console.error('❌ Coinbase Wallet connection failed:', err);
+        });
       } else if (isMetaMaskUA && injectedConnector) {
-        connect({ connector: injectedConnector });
+        console.log('🦊 Connecting with MetaMask (injected) connector');
+        connect({ connector: injectedConnector }).catch(err => {
+          console.error('❌ MetaMask connection failed:', err);
+        });
       } else if (hasEthereum && injectedConnector) {
-        // Fallback to injected if we have any ethereum provider
-        connect({ connector: injectedConnector });
+        console.log('💉 Connecting with injected connector (generic)');
+        connect({ connector: injectedConnector }).catch(err => {
+          console.error('❌ Injected connector failed:', err);
+        });
       } else if (hasTrustWallet && trustConnector) {
-        // Try Trust Wallet connector if Trust is available
-        connect({ connector: trustConnector });
+        console.log('🛡️ Fallback: Connecting with Trust Wallet connector');
+        connect({ connector: trustConnector }).catch(err => {
+          console.error('❌ Trust Wallet fallback failed:', err);
+        });
       } else if (isMobile()) {
-        // On mobile without any provider, show wallet selection
+        console.log('📱 No wallet detected, showing wallet selection');
         setCurrentStep('wallet-select');
       }
     }
@@ -307,19 +392,27 @@ const PaymentFlow = () => {
       console.log('Required amount:', amountInUnits.toString());
 
       if (allowance < amountInUnits) {
-        // Execute approval
-        const approveHash = await writeContract(config, {
-          address: paymentData.tokenContract,
-          abi: erc20Abi,
-          functionName: 'approve',
-          args: [paymentData.contractAddress, amountInUnits]
-        });
+        console.log('🔐 Executing token approval...');
+        try {
+          // Execute approval
+          const approveHash = await writeContract(config, {
+            address: paymentData.tokenContract,
+            abi: erc20Abi,
+            functionName: 'approve',
+            args: [paymentData.contractAddress, amountInUnits]
+          });
 
-        setApprovalHash(approveHash);
-        console.log('Approval transaction hash:', approveHash);
+          setApprovalHash(approveHash);
+          console.log('✅ Approval transaction hash:', approveHash);
 
-        // Wait a bit for approval to be processed
-        await new Promise(resolve => setTimeout(resolve, 3000));
+          // Wait a bit for approval to be processed
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        } catch (approvalError) {
+          console.error('❌ Approval transaction failed:', approvalError);
+          throw approvalError;
+        }
+      } else {
+        console.log('✅ Token already approved, skipping approval step');
       }
 
       // Step 2: Execute splitPayment
@@ -450,6 +543,7 @@ const PaymentFlow = () => {
       // Simulate first to check for errors
       let splitHash;
       try {
+        console.log('🧪 Simulating splitPayment transaction...');
         const { request } = await simulateContract(config, {
           address: paymentData.contractAddress,
           abi: splitPaymentAbi,
@@ -457,11 +551,19 @@ const PaymentFlow = () => {
           args: [paymentDetails],
           account: address
         });
+        console.log('✅ Simulation successful, executing transaction...');
 
         // Execute the transaction
         splitHash = await writeContract(config, request);
+        console.log('✅ Split payment transaction submitted:', splitHash);
       } catch (simulationError) {
-        console.error('Simulation failed:', simulationError);
+        console.error('❌ Split payment simulation failed:', simulationError);
+        console.error('❌ Simulation error details:', {
+          message: simulationError.message,
+          cause: simulationError.cause,
+          code: simulationError.code
+        });
+
         if (simulationError.message.includes('transfer amount exceeds balance')) {
           throw new Error(`Insufficient ${paymentData.token} balance. You need ${paymentData.amount} ${paymentData.token} but may not have enough in your wallet.`);
         }
@@ -846,6 +948,74 @@ const PaymentFlow = () => {
     </div>
   );
 
+  // Error Panel Component
+  const ErrorPanel = () => (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg max-w-4xl w-full max-h-[80vh] overflow-hidden">
+        <div className="flex justify-between items-center p-4 border-b">
+          <h3 className="text-lg font-semibold">Mobile Debug Console</h3>
+          <div className="flex space-x-2">
+            <button
+              onClick={() => {
+                setErrorLogs([]);
+              }}
+              className="px-3 py-1 bg-gray-500 text-white text-sm rounded hover:bg-gray-600"
+            >
+              Clear
+            </button>
+            <button
+              onClick={() => {
+                const logText = errorLogs.map(log =>
+                  `[${log.timestamp}] ${log.type.toUpperCase()}: ${log.message}`
+                ).join('\n');
+                navigator.clipboard?.writeText(logText);
+              }}
+              className="px-3 py-1 bg-blue-500 text-white text-sm rounded hover:bg-blue-600"
+            >
+              Copy
+            </button>
+            <button
+              onClick={() => setShowErrorPanel(false)}
+              className="px-3 py-1 bg-red-500 text-white text-sm rounded hover:bg-red-600"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+        <div className="p-4 max-h-96 overflow-y-auto">
+          {errorLogs.length === 0 ? (
+            <div className="text-gray-500 text-center py-8">No logs yet</div>
+          ) : (
+            <div className="space-y-2">
+              {errorLogs.map(log => (
+                <div
+                  key={log.id}
+                  className={`p-2 rounded text-xs font-mono ${
+                    log.type === 'error' ? 'bg-red-50 border border-red-200' :
+                    log.type === 'warn' ? 'bg-yellow-50 border border-yellow-200' :
+                    'bg-blue-50 border border-blue-200'
+                  }`}
+                >
+                  <div className="flex justify-between items-start">
+                    <span className={`font-semibold ${
+                      log.type === 'error' ? 'text-red-700' :
+                      log.type === 'warn' ? 'text-yellow-700' :
+                      'text-blue-700'
+                    }`}>
+                      {log.type.toUpperCase()}
+                    </span>
+                    <span className="text-gray-500">{log.timestamp}</span>
+                  </div>
+                  <div className="mt-1 whitespace-pre-wrap break-all">{log.message}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full">
@@ -862,6 +1032,21 @@ const PaymentFlow = () => {
         {currentStep === 'wallet-select' && <WalletSelectStep />}
         {currentStep === 'no-wallet' && <NoWalletStep />}
       </div>
+
+      {/* Floating debug button */}
+      <button
+        onClick={() => setShowErrorPanel(true)}
+        className={`fixed bottom-4 right-4 w-12 h-12 rounded-full shadow-lg flex items-center justify-center text-white font-bold z-40 ${
+          errorLogs.some(log => log.type === 'error') ? 'bg-red-500' :
+          errorLogs.some(log => log.type === 'warn') ? 'bg-yellow-500' :
+          'bg-blue-500'
+        }`}
+      >
+        {errorLogs.length > 0 ? errorLogs.length : '🐛'}
+      </button>
+
+      {/* Error panel overlay */}
+      {showErrorPanel && <ErrorPanel />}
     </div>
   );
 };
