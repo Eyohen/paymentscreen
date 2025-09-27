@@ -13,13 +13,11 @@ const isMobile = () => {
   return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 };
 
-// Helper function to detect if we're inside a mobile wallet browser
-const isInWalletBrowser = () => {
-  const userAgent = navigator.userAgent.toLowerCase();
-  return userAgent.includes('metamask') ||
-         userAgent.includes('trustwallet') ||
-         userAgent.includes('coinbasewallet') ||
-         typeof window.ethereum !== 'undefined';
+// Debug mode - only show in development or when explicitly enabled
+const isDebugMode = () => {
+  return process.env.NODE_ENV === 'development' ||
+         process.env.REACT_APP_DEBUG_MODE === 'true' ||
+         new URLSearchParams(window.location.search).get('debug') === 'true';
 };
 
 // Simple API client for backend communication
@@ -166,33 +164,37 @@ const PaymentFlow = () => {
     });
   }, [paymentData]);
 
-  // Auto-connect wallet on mount with mobile handling
+  // Smart auto-connect using wagmi connectors
   useEffect(() => {
     if (!isConnected && connectors.length > 0) {
-      const mobile = isMobile();
-      const inWallet = isInWalletBrowser();
+      // Try multiple connectors in order of preference
+      const injectedConnector = connectors.find(c => c.id === 'injected');
+      const trustConnector = connectors.find(c => c.id === 'trustWallet');
+      const coinbaseConnector = connectors.find(c => c.id === 'coinbaseWallet');
 
-      console.log('Device info:', { mobile, inWallet, userAgent: navigator.userAgent });
+      // Check what's available in the browser
+      const hasEthereum = typeof window.ethereum !== 'undefined';
+      const hasTrustWallet = typeof window.trustwallet !== 'undefined';
+      const isTrustWalletUA = navigator.userAgent.toLowerCase().includes('trust');
+      const isMetaMaskUA = navigator.userAgent.toLowerCase().includes('metamask');
+      const isCoinbaseUA = navigator.userAgent.toLowerCase().includes('coinbase');
 
-      if (mobile && inWallet) {
-        // We're inside a mobile wallet browser, try to connect immediately
-        const injectedConnector = connectors.find(c => c.id === 'injected');
-        const trustConnector = connectors.find(c => c.id === 'trustWallet');
-
-        if (trustConnector && navigator.userAgent.toLowerCase().includes('trust')) {
-          connect({ connector: trustConnector });
-        } else if (injectedConnector) {
-          connect({ connector: injectedConnector });
-        }
-      } else if (mobile && !inWallet) {
-        // Mobile device but not in wallet browser - show wallet selection
+      // Try wallet-specific connectors first based on detection
+      if (isTrustWalletUA && trustConnector) {
+        connect({ connector: trustConnector });
+      } else if (isCoinbaseUA && coinbaseConnector) {
+        connect({ connector: coinbaseConnector });
+      } else if (isMetaMaskUA && injectedConnector) {
+        connect({ connector: injectedConnector });
+      } else if (hasEthereum && injectedConnector) {
+        // Fallback to injected if we have any ethereum provider
+        connect({ connector: injectedConnector });
+      } else if (hasTrustWallet && trustConnector) {
+        // Try Trust Wallet connector if Trust is available
+        connect({ connector: trustConnector });
+      } else if (isMobile()) {
+        // On mobile without any provider, show wallet selection
         setCurrentStep('wallet-select');
-      } else {
-        // Desktop - try auto-connect
-        const injectedConnector = connectors.find(c => c.id === 'injected');
-        if (injectedConnector) {
-          connect({ connector: injectedConnector });
-        }
       }
     }
   }, [connectors, connect, isConnected]);
@@ -200,25 +202,25 @@ const PaymentFlow = () => {
   // Handle window focus to retry connection after returning from wallet app
   useEffect(() => {
     const handleFocus = () => {
-      const mobile = isMobile();
-      const inWallet = isInWalletBrowser();
-
-      if (mobile && !isConnected && connectionAttempts < 3 && currentStep === 'approval') {
-        console.log('Window focused, attempting connection retry...');
+      if (!isConnected && connectionAttempts < 3 && currentStep === 'approval') {
         setConnectionAttempts(prev => prev + 1);
 
-        setTimeout(() => {
-          if (connectors.length > 0) {
-            const injectedConnector = connectors.find(c => c.id === 'injected');
-            const trustConnector = connectors.find(c => c.id === 'trustWallet');
+        // Try multiple connectors on retry
+        const injectedConnector = connectors.find(c => c.id === 'injected');
+        const trustConnector = connectors.find(c => c.id === 'trustWallet');
+        const coinbaseConnector = connectors.find(c => c.id === 'coinbaseWallet');
 
-            if (trustConnector && navigator.userAgent.toLowerCase().includes('trust')) {
-              connect({ connector: trustConnector });
-            } else if (injectedConnector) {
-              connect({ connector: injectedConnector });
-            }
-          }
-        }, 1000);
+        // Same logic as initial connection
+        const isTrustWalletUA = navigator.userAgent.toLowerCase().includes('trust');
+        const isCoinbaseUA = navigator.userAgent.toLowerCase().includes('coinbase');
+
+        if (isTrustWalletUA && trustConnector) {
+          connect({ connector: trustConnector });
+        } else if (isCoinbaseUA && coinbaseConnector) {
+          connect({ connector: coinbaseConnector });
+        } else if (injectedConnector && typeof window.ethereum !== 'undefined') {
+          connect({ connector: injectedConnector });
+        }
       }
     };
 
@@ -257,10 +259,12 @@ const PaymentFlow = () => {
     setProcessing(true);
     setCurrentStep('payment');
 
-    // Start the approval process
+    // Add longer delay for mobile wallets to ensure proper initialization
+    const delay = isMobile() ? 2000 : 1000;
+
     setTimeout(() => {
       executeApprovalAndPayment();
-    }, 1000);
+    }, delay);
   };
 
   // Execute approval and payment in sequence
@@ -537,6 +541,26 @@ const PaymentFlow = () => {
         </div>
       )}
 
+      {/* Debug info for mobile - only in development */}
+      {isDebugMode() && (
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-xs">
+          <div className="text-blue-800 font-semibold mb-2">Debug Info:</div>
+          <div className="text-left space-y-1 text-blue-700">
+            <div>Connected: {isConnected ? '✅' : '❌'}</div>
+            <div>Chain: {chain?.id || 'none'} (target: {paymentData.chainId})</div>
+            <div>Ethereum: {typeof window.ethereum !== 'undefined' ? '✅' : '❌'}</div>
+            <div>TrustWallet: {typeof window.trustwallet !== 'undefined' ? '✅' : '❌'}</div>
+            <div>MetaMask: {window.ethereum?.isMetaMask ? '✅' : '❌'}</div>
+            <div>Mobile: {isMobile() ? '✅' : '❌'}</div>
+            <div>Connectors: {connectors.map(c => c.id).join(', ')}</div>
+            <div>Current Step: {currentStep}</div>
+            <div>Processing: {processing ? '✅' : '❌'}</div>
+            <div>UserAgent: {navigator.userAgent.includes('Trust') ? 'Trust' : navigator.userAgent.includes('MetaMask') ? 'MetaMask' : navigator.userAgent.includes('Coinbase') ? 'Coinbase' : 'Other'}</div>
+            {connectError && <div className="text-red-600">Error: {connectError.message}</div>}
+          </div>
+        </div>
+      )}
+
       <div className="bg-gray-50 rounded-xl p-4 mb-6">
         <div className="flex justify-between items-center mb-2">
           <span className="text-sm text-gray-600">Network:</span>
@@ -583,6 +607,20 @@ const PaymentFlow = () => {
       <p className="text-gray-600 mb-6">
         {isWriting ? 'Confirm the transaction in your wallet' : 'Sending transaction to the blockchain...'}
       </p>
+
+      {/* Debug info for payment step - only in development */}
+      {isDebugMode() && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4 text-xs">
+          <div className="text-yellow-800 font-semibold mb-2">Payment Debug:</div>
+          <div className="text-left space-y-1 text-yellow-700">
+            <div>Writing: {isWriting ? '✅' : '❌'}</div>
+            <div>Processing: {processing ? '✅' : '❌'}</div>
+            <div>Approval Hash: {approvalHash ? approvalHash.slice(0, 10) + '...' : 'none'}</div>
+            <div>Payment Hash: {paymentHash ? paymentHash.slice(0, 10) + '...' : 'none'}</div>
+            {writeError && <div className="text-red-600">Error: {writeError.message?.slice(0, 100)}</div>}
+          </div>
+        </div>
+      )}
 
       <div className="bg-gray-50 rounded-xl p-6 mb-6">
         <div className="flex justify-between items-center mb-3">
@@ -700,64 +738,67 @@ const PaymentFlow = () => {
       <p className="text-gray-600 mb-6">Select how you want to connect and pay</p>
 
       <div className="space-y-4">
+        {/* Dynamic connector buttons */}
+        {connectors.map((connector) => {
+          const getConnectorInfo = (id) => {
+            switch(id) {
+              case 'injected':
+                return { name: 'Browser Wallet', color: 'bg-purple-600', action: () => connect({ connector }) };
+              case 'trustWallet':
+                return { name: 'Trust Wallet', color: 'bg-blue-600', action: () => {
+                  const trustUrl = `https://link.trustwallet.com/open_url?coin_id=60&url=${encodeURIComponent(window.location.href)}`;
+                  window.location.href = trustUrl;
+                  setTimeout(() => connect({ connector }), 3000);
+                }};
+              case 'coinbaseWallet':
+                return { name: 'Coinbase Wallet', color: 'bg-indigo-600', action: () => {
+                  const coinbaseUrl = `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(window.location.href)}`;
+                  window.location.href = coinbaseUrl;
+                  setTimeout(() => connect({ connector }), 3000);
+                }};
+              case 'walletConnect':
+                return { name: 'WalletConnect', color: 'bg-blue-500', action: () => connect({ connector }) };
+              default:
+                return { name: connector.name, color: 'bg-gray-600', action: () => connect({ connector }) };
+            }
+          };
+
+          const info = getConnectorInfo(connector.id);
+          return (
+            <button
+              key={connector.id}
+              onClick={info.action}
+              className={`block w-full ${info.color} text-white py-4 px-6 rounded-xl font-semibold hover:opacity-90 transition-colors`}
+            >
+              {info.name}
+            </button>
+          );
+        })}
+
+        {/* MetaMask deep link for cases where injected doesn't work */}
         <button
           onClick={() => {
-            // Try multiple MetaMask deep link patterns
             const urls = [
               `metamask://dapp/${window.location.host}${window.location.pathname}${window.location.search}`,
               `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}${window.location.search}`,
             ];
-
-            // Try the deep link first, then fallback
             window.location.href = urls[0];
-
-            // Fallback after a short delay
             setTimeout(() => {
               if (!document.hidden) {
                 window.location.href = urls[1];
               }
             }, 2500);
           }}
-          className="block w-full bg-orange-500 text-white py-4 px-6 rounded-xl font-semibold hover:bg-orange-600 transition-colors"
+          className="block w-full bg-orange-500 text-white py-3 px-6 rounded-xl font-semibold hover:bg-orange-600 transition-colors"
         >
-          Open in MetaMask
-        </button>
-
-        <button
-          onClick={() => {
-            const trustUrl = `https://link.trustwallet.com/open_url?coin_id=60&url=${encodeURIComponent(window.location.href)}`;
-            window.location.href = trustUrl;
-
-            // Set a timeout to retry connection
-            setTimeout(() => {
-              setCurrentStep('approval');
-            }, 3000);
-          }}
-          className="block w-full bg-blue-600 text-white py-4 px-6 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
-        >
-          Open in Trust Wallet
-        </button>
-
-        <button
-          onClick={() => {
-            const coinbaseUrl = `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(window.location.href)}`;
-            window.location.href = coinbaseUrl;
-
-            // Set a timeout to retry connection
-            setTimeout(() => {
-              setCurrentStep('approval');
-            }, 3000);
-          }}
-          className="block w-full bg-indigo-600 text-white py-4 px-6 rounded-xl font-semibold hover:bg-indigo-700 transition-colors"
-        >
-          Open in Coinbase Wallet
+          Open in MetaMask (Deep Link)
         </button>
 
         <button
           onClick={() => setCurrentStep('approval')}
           className="block w-full bg-gray-300 text-gray-700 py-3 px-6 rounded-xl font-semibold hover:bg-gray-400 transition-colors"
         >
-          I have a wallet installed
+          I have a wallet connected
         </button>
       </div>
 
