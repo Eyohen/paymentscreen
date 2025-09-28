@@ -242,62 +242,77 @@ const PaymentFlow = () => {
   // Debug logging on mount
   useEffect(() => {
     const apiCredentials = getApiCredentials();
-    console.log('Payment data:', paymentData);
-    console.log('Chain ID:', paymentData.chainId);
-    console.log('Token:', paymentData.token);
-    console.log('Token Contract:', paymentData.tokenContract);
-    console.log('Payment Contract:', paymentData.contractAddress);
-    console.log('API Credentials (from .env):', {
+    console.log('📊 Payment data:', paymentData);
+    console.log('🔗 Chain ID:', paymentData.chainId);
+    console.log('🪙 Token:', paymentData.token);
+    console.log('📄 Token Contract:', paymentData.tokenContract);
+    console.log('🏗️ Payment Contract:', paymentData.contractAddress);
+    console.log('🔑 API Credentials (from .env):', {
       hasApiKey: !!apiCredentials.apiKey,
       apiKeyLength: apiCredentials.apiKey ? apiCredentials.apiKey.length : 0,
       hasApiSecret: !!apiCredentials.apiSecret,
       apiUrl: apiCredentials.apiUrl
     });
+
+    // Log the complete QR code URL for debugging
+    console.log('🔍 COMPLETE QR CODE URL:', window.location.href);
+    console.log('🔍 QR URL BREAKDOWN:', {
+      origin: window.location.origin,
+      pathname: window.location.pathname,
+      search: window.location.search,
+      searchParams: Object.fromEntries(new URLSearchParams(window.location.search))
+    });
   }, [paymentData]);
 
-  // Smart auto-connect using wagmi connectors
+  // Simplified mobile-focused auto-connect
   useEffect(() => {
     if (!isConnected && connectors.length > 0) {
-      // Try multiple connectors in order of preference
-      const injectedConnector = connectors.find(c => c.id === 'injected');
+      console.log('🔍 Available connectors:', connectors.map(c => ({ id: c.id, name: c.name })));
+
+      // Get wallet-specific connectors
       const trustConnector = connectors.find(c => c.id === 'trustWallet');
+      const metaMaskConnector = connectors.find(c => c.id === 'metaMask');
       const coinbaseConnector = connectors.find(c => c.id === 'coinbaseWallet');
+      const injectedConnector = connectors.find(c => c.id === 'injected');
 
-      // Check what's available in the browser
-      const hasEthereum = typeof window.ethereum !== 'undefined';
-      const hasTrustWallet = typeof window.trustwallet !== 'undefined';
-      const isTrustWalletUA = navigator.userAgent.toLowerCase().includes('trust');
-      const isMetaMaskUA = navigator.userAgent.toLowerCase().includes('metamask');
-      const isCoinbaseUA = navigator.userAgent.toLowerCase().includes('coinbase');
+      // Check user agent for wallet detection
+      const userAgent = navigator.userAgent.toLowerCase();
+      const isTrustWallet = userAgent.includes('trust');
+      const isMetaMask = userAgent.includes('metamask');
+      const isCoinbase = userAgent.includes('coinbase');
 
-      // Try wallet-specific connectors first based on detection
-      if (isTrustWalletUA && trustConnector) {
-        console.log('🛡️ Connecting with Trust Wallet connector');
+      console.log('🔍 Wallet detection:', { isTrustWallet, isMetaMask, isCoinbase });
+
+      // Priority order: Trust Wallet → MetaMask → Coinbase → Generic
+      if (isTrustWallet && trustConnector) {
+        console.log('🛡️ Trust Wallet detected - connecting with Trust connector');
         connect({ connector: trustConnector }).catch(err => {
           console.error('❌ Trust Wallet connection failed:', err);
+          // Fallback to injected for Trust Wallet
+          if (injectedConnector) {
+            console.log('🔄 Falling back to injected connector for Trust Wallet');
+            connect({ connector: injectedConnector }).catch(fallbackErr => {
+              console.error('❌ Trust Wallet injected fallback failed:', fallbackErr);
+            });
+          }
         });
-      } else if (isCoinbaseUA && coinbaseConnector) {
-        console.log('💙 Connecting with Coinbase Wallet connector');
-        connect({ connector: coinbaseConnector }).catch(err => {
-          console.error('❌ Coinbase Wallet connection failed:', err);
-        });
-      } else if (isMetaMaskUA && injectedConnector) {
-        console.log('🦊 Connecting with MetaMask (injected) connector');
-        connect({ connector: injectedConnector }).catch(err => {
+      } else if (isMetaMask && metaMaskConnector) {
+        console.log('🦊 MetaMask detected - connecting with MetaMask connector');
+        connect({ connector: metaMaskConnector }).catch(err => {
           console.error('❌ MetaMask connection failed:', err);
         });
-      } else if (hasEthereum && injectedConnector) {
-        console.log('💉 Connecting with injected connector (generic)');
+      } else if (isCoinbase && coinbaseConnector) {
+        console.log('💙 Coinbase detected - connecting with Coinbase connector');
+        connect({ connector: coinbaseConnector }).catch(err => {
+          console.error('❌ Coinbase connection failed:', err);
+        });
+      } else if (typeof window.ethereum !== 'undefined' && injectedConnector) {
+        console.log('💉 Generic wallet detected - using injected connector');
         connect({ connector: injectedConnector }).catch(err => {
           console.error('❌ Injected connector failed:', err);
         });
-      } else if (hasTrustWallet && trustConnector) {
-        console.log('🛡️ Fallback: Connecting with Trust Wallet connector');
-        connect({ connector: trustConnector }).catch(err => {
-          console.error('❌ Trust Wallet fallback failed:', err);
-        });
       } else if (isMobile()) {
-        console.log('📱 No wallet detected, showing wallet selection');
+        console.log('📱 Mobile device - showing wallet selection');
         setCurrentStep('wallet-select');
       }
     }
@@ -348,42 +363,79 @@ const PaymentFlow = () => {
           handleAutomaticApproval();
         }, 1500);
       }
-    } else if (!isConnected && effectiveAddress) {
+    } else if (!isConnected && effectiveAddress && !processing) {
       console.warn('⚠️ Have address but not connected - attempting reconnection...');
+      // Try to reconnect if we have address but lost connection
+      const injectedConnector = connectors.find(c => c.id === 'injected');
+      if (injectedConnector && connectionAttempts < 3) {
+        setConnectionAttempts(prev => prev + 1);
+        connect({ connector: injectedConnector }).catch(err => {
+          console.error('❌ Reconnection failed:', err);
+        });
+      }
     }
-  }, [isConnected, effectiveAddress, chain, paymentData.chainId]);
+  }, [isConnected, effectiveAddress, chain, paymentData.chainId, processing, connectors, connect, connectionAttempts]);
 
-  // Trust Wallet specific auto-retry mechanism
+  // Enhanced Trust Wallet specific debugging and connection
   useEffect(() => {
-    const isTrustWallet = navigator.userAgent.toLowerCase().includes('trust');
+    const userAgent = navigator.userAgent.toLowerCase();
+    const isTrustWallet = userAgent.includes('trust');
 
-    if (isTrustWallet && !isConnected && connectionAttempts < 5) {
-      console.log('🛡️ Trust Wallet detected - attempting auto-connection retry in 3s...');
+    if (isTrustWallet) {
+      console.log('🛡️ TRUST WALLET DETECTED - Enhanced debugging:');
+      console.log('🛡️ User Agent:', navigator.userAgent);
+      console.log('🛡️ Window providers:', {
+        ethereum: !!window.ethereum,
+        trustwallet: !!window.trustwallet,
+        ethereumIsMetaMask: window.ethereum?.isMetaMask,
+        ethereumIsTrust: window.ethereum?.isTrust,
+        allProviders: window.ethereum?.providers?.length || 0
+      });
+      console.log('🛡️ Current state:', {
+        isConnected,
+        connectionAttempts,
+        currentStep,
+        processing,
+        effectiveAddress
+      });
 
-      const retryTimer = setTimeout(() => {
-        const trustConnector = connectors.find(c => c.id === 'trustWallet');
-        const injectedConnector = connectors.find(c => c.id === 'injected');
+      // Auto-retry for Trust Wallet with detailed logging
+      if (!isConnected && connectionAttempts < 5) {
+        console.log('🛡️ Trust Wallet auto-retry triggered (attempt', connectionAttempts + 1, 'of 5)');
 
-        if (trustConnector) {
-          console.log('🛡️ Auto-retrying Trust Wallet connector');
-          setConnectionAttempts(prev => prev + 1);
-          connect({ connector: trustConnector }).catch(err => {
-            console.error('❌ Trust Wallet auto-retry failed:', err);
+        const retryTimer = setTimeout(() => {
+          const trustConnector = connectors.find(c => c.id === 'trustWallet');
+          const injectedConnector = connectors.find(c => c.id === 'injected');
 
-            // Fallback to injected if Trust connector fails
-            if (injectedConnector) {
-              console.log('🔄 Falling back to injected connector');
-              connect({ connector: injectedConnector }).catch(fallbackErr => {
-                console.error('❌ Injected fallback failed:', fallbackErr);
-              });
-            }
+          console.log('🛡️ Available connectors for retry:', {
+            trustConnector: !!trustConnector,
+            injectedConnector: !!injectedConnector,
+            totalConnectors: connectors.length
           });
-        }
-      }, 3000);
 
-      return () => clearTimeout(retryTimer);
+          if (trustConnector) {
+            console.log('🛡️ Attempting Trust Wallet connector...');
+            setConnectionAttempts(prev => prev + 1);
+            connect({ connector: trustConnector }).catch(err => {
+              console.error('❌ Trust Wallet connector failed:', err.message, err.code);
+
+              // Fallback to injected if Trust connector fails
+              if (injectedConnector) {
+                console.log('🔄 Trust Wallet failed, trying injected connector...');
+                connect({ connector: injectedConnector }).catch(fallbackErr => {
+                  console.error('❌ Injected fallback also failed:', fallbackErr.message, fallbackErr.code);
+                });
+              }
+            });
+          } else {
+            console.warn('⚠️ No Trust Wallet connector found in retry attempt');
+          }
+        }, 3000);
+
+        return () => clearTimeout(retryTimer);
+      }
     }
-  }, [connectors, connect, isConnected, connectionAttempts]);
+  }, [connectors, connect, isConnected, connectionAttempts, currentStep, processing, effectiveAddress]);
 
   // Get token decimals based on token symbol
   const getTokenDecimals = (tokenSymbol) => {
@@ -702,32 +754,34 @@ const PaymentFlow = () => {
   };
 
   // UI Components
-  const ApprovalStep = () => (
-    <div className="text-center animate-fade-in">
-      <div className="relative mb-6">
-        <div className="w-20 h-20 mx-auto bg-purple-700 rounded-full flex items-center justify-center">
-          <svg className="w-10 h-10 text-white animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-          </svg>
-        </div>
-        <div className="absolute inset-0 w-20 h-20 mx-auto bg-purple-700 rounded-full animate-ping opacity-75"></div>
-      </div>
+  const ApprovalStep = () => {
+    try {
+      return (
+        <div className="text-center animate-fade-in">
+          <div className="relative mb-6">
+            <div className="w-20 h-20 mx-auto bg-purple-700 rounded-full flex items-center justify-center">
+              <svg className="w-10 h-10 text-white animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+            </div>
+            <div className="absolute inset-0 w-20 h-20 mx-auto bg-purple-700 rounded-full animate-ping opacity-75"></div>
+          </div>
 
-      <h2 className="text-2xl font-bold text-gray-800 mb-2">
-        {isConnected ? 'Preparing Transaction...' : 'Connecting Wallet...'}
-      </h2>
-      <p className="text-gray-600 mb-6">
-        {isConnected ? 'Please approve the transaction in your wallet' : 'Connecting to your wallet automatically'}
-      </p>
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">
+            {isConnected ? 'Preparing Transaction...' : 'Connecting Wallet...'}
+          </h2>
+          <p className="text-gray-600 mb-6">
+            {isConnected ? 'Please approve the transaction in your wallet' : 'Connecting to your wallet automatically'}
+          </p>
 
-      {isConnected && effectiveAddress && (
-        <div className="text-sm text-gray-500 mb-4">
-          Connected: {effectiveAddress.slice(0, 6)}...{effectiveAddress.slice(-4)}
-        </div>
-      )}
+          {isConnected && effectiveAddress && (
+            <div className="text-sm text-gray-500 mb-4">
+              Connected: {effectiveAddress.slice(0, 6)}...{effectiveAddress.slice(-4)}
+            </div>
+          )}
 
-      {/* Debug info for mobile - only in development */}
-      {isDebugMode() && (
+          {/* Debug info for mobile - only in development */}
+          {isDebugMode() && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 text-xs">
           <div className="text-blue-800 font-semibold mb-2">Debug Info:</div>
           <div className="text-left space-y-1 text-blue-700">
@@ -771,11 +825,26 @@ const PaymentFlow = () => {
         </div>
       )}
 
-      <p className="text-xs text-gray-500">
-        Transaction will be processed automatically once connected
-      </p>
-    </div>
-  );
+          <p className="text-xs text-gray-500">
+            Transaction will be processed automatically once connected
+          </p>
+        </div>
+      );
+    } catch (error) {
+      console.error('❌ Error in ApprovalStep:', error);
+      return (
+        <div className="text-center p-8">
+          <div className="text-red-500 mb-4">⚠️ Component Error</div>
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-purple-600 text-white px-4 py-2 rounded"
+          >
+            Reload
+          </button>
+        </div>
+      );
+    }
+  };
 
   const PaymentStep = () => (
     <div className="text-center animate-fade-in">
@@ -923,65 +992,87 @@ const PaymentFlow = () => {
       <p className="text-gray-600 mb-6">Select how you want to connect and pay</p>
 
       <div className="space-y-4">
-        {/* Dynamic connector buttons */}
-        {connectors.map((connector) => {
-          const getConnectorInfo = (id) => {
-            switch(id) {
-              case 'injected':
-                return { name: 'Browser Wallet', color: 'bg-purple-600', action: () => connect({ connector }) };
-              case 'trustWallet':
-                return { name: 'Trust Wallet', color: 'bg-blue-600', action: () => {
-                  const trustUrl = `https://link.trustwallet.com/open_url?coin_id=60&url=${encodeURIComponent(window.location.href)}`;
-                  window.location.href = trustUrl;
-                  setTimeout(() => connect({ connector }), 3000);
-                }};
-              case 'coinbaseWallet':
-                return { name: 'Coinbase Wallet', color: 'bg-indigo-600', action: () => {
-                  const coinbaseUrl = `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(window.location.href)}`;
-                  window.location.href = coinbaseUrl;
-                  setTimeout(() => connect({ connector }), 3000);
-                }};
-              default:
-                return { name: connector.name, color: 'bg-gray-600', action: () => connect({ connector }) };
-            }
-          };
-
-          const info = getConnectorInfo(connector.id);
-          return (
-            <button
-              key={connector.id}
-              onClick={info.action}
-              className={`block w-full ${info.color} text-white py-4 px-6 rounded-xl font-semibold hover:opacity-90 transition-colors`}
-            >
-              {info.name}
-            </button>
-          );
-        })}
-
-        {/* MetaMask deep link for cases where injected doesn't work */}
+        {/* Trust Wallet */}
         <button
           onClick={() => {
-            const urls = [
-              `metamask://dapp/${window.location.host}${window.location.pathname}${window.location.search}`,
-              `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}${window.location.search}`,
-            ];
-            window.location.href = urls[0];
-            setTimeout(() => {
-              if (!document.hidden) {
-                window.location.href = urls[1];
-              }
-            }, 2500);
+            console.log('🛡️ Manual Trust Wallet connection attempt');
+            const trustConnector = connectors.find(c => c.id === 'trustWallet');
+            if (trustConnector) {
+              connect({ connector: trustConnector }).catch(err => {
+                console.error('❌ Manual Trust Wallet connection failed:', err);
+                // Try deep link as fallback
+                const trustUrl = `https://link.trustwallet.com/open_url?coin_id=60&url=${encodeURIComponent(window.location.href)}`;
+                console.log('🔗 Trying Trust Wallet deep link:', trustUrl);
+                window.location.href = trustUrl;
+              });
+            }
           }}
-          className="block w-full bg-orange-500 text-white py-3 px-6 rounded-xl font-semibold hover:bg-orange-600 transition-colors"
+          className="block w-full bg-blue-600 text-white py-4 px-6 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
         >
-          Open in MetaMask (Deep Link)
+          🛡️ Trust Wallet
+        </button>
+
+        {/* MetaMask */}
+        <button
+          onClick={() => {
+            console.log('🦊 Manual MetaMask connection attempt');
+            const metaMaskConnector = connectors.find(c => c.id === 'metaMask');
+            if (metaMaskConnector) {
+              connect({ connector: metaMaskConnector }).catch(err => {
+                console.error('❌ Manual MetaMask connection failed:', err);
+                // Try deep link as fallback
+                const metaMaskUrl = `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}${window.location.search}`;
+                console.log('🔗 Trying MetaMask deep link:', metaMaskUrl);
+                window.location.href = metaMaskUrl;
+              });
+            }
+          }}
+          className="block w-full bg-orange-500 text-white py-4 px-6 rounded-xl font-semibold hover:bg-orange-600 transition-colors"
+        >
+          🦊 MetaMask
+        </button>
+
+        {/* Coinbase Wallet */}
+        <button
+          onClick={() => {
+            console.log('💙 Manual Coinbase connection attempt');
+            const coinbaseConnector = connectors.find(c => c.id === 'coinbaseWallet');
+            if (coinbaseConnector) {
+              connect({ connector: coinbaseConnector }).catch(err => {
+                console.error('❌ Manual Coinbase connection failed:', err);
+                // Try deep link as fallback
+                const coinbaseUrl = `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(window.location.href)}`;
+                console.log('🔗 Trying Coinbase deep link:', coinbaseUrl);
+                window.location.href = coinbaseUrl;
+              });
+            }
+          }}
+          className="block w-full bg-indigo-600 text-white py-4 px-6 rounded-xl font-semibold hover:bg-indigo-700 transition-colors"
+        >
+          💙 Coinbase Wallet
+        </button>
+
+        {/* Fallback for any other wallet */}
+        <button
+          onClick={() => {
+            console.log('💉 Manual injected connector attempt');
+            const injectedConnector = connectors.find(c => c.id === 'injected');
+            if (injectedConnector) {
+              connect({ connector: injectedConnector }).catch(err => {
+                console.error('❌ Manual injected connection failed:', err);
+              });
+            }
+          }}
+          className="block w-full bg-gray-500 text-white py-3 px-6 rounded-xl font-semibold hover:bg-gray-600 transition-colors"
+        >
+          🔌 Other Wallet
         </button>
 
         <button
           onClick={() => setCurrentStep('approval')}
           className="block w-full bg-gray-300 text-gray-700 py-3 px-6 rounded-xl font-semibold hover:bg-gray-400 transition-colors"
         >
-          I have a wallet connected
+          Skip (Already Connected)
         </button>
       </div>
 
@@ -1097,6 +1188,49 @@ const PaymentFlow = () => {
     </div>
   );
 
+  // Safe step rendering with fallbacks
+  const renderCurrentStep = () => {
+    try {
+      switch (currentStep) {
+        case 'approval':
+          return <ApprovalStep />;
+        case 'payment':
+          return <PaymentStep />;
+        case 'success':
+          return <SuccessStep />;
+        case 'failure':
+          return <FailureStep />;
+        case 'wallet-select':
+          return <WalletSelectStep />;
+        case 'no-wallet':
+          return <NoWalletStep />;
+        default:
+          console.warn('⚠️ Unknown step:', currentStep, '- defaulting to approval');
+          return <ApprovalStep />;
+      }
+    } catch (error) {
+      console.error('❌ Error rendering step:', currentStep, error);
+      return (
+        <div className="text-center p-8">
+          <div className="text-red-500 mb-4">⚠️ Rendering Error</div>
+          <div className="text-sm text-gray-600 mb-4">
+            Current step: {currentStep || 'undefined'}
+          </div>
+          <button
+            onClick={() => {
+              setCurrentStep('approval');
+              setProcessing(false);
+              setIsWriting(false);
+            }}
+            className="bg-purple-600 text-white px-4 py-2 rounded"
+          >
+            Reset to Approval
+          </button>
+        </div>
+      );
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full">
@@ -1106,12 +1240,7 @@ const PaymentFlow = () => {
           </h1>
         </div>
 
-        {currentStep === 'approval' && <ApprovalStep />}
-        {currentStep === 'payment' && <PaymentStep />}
-        {currentStep === 'success' && <SuccessStep />}
-        {currentStep === 'failure' && <FailureStep />}
-        {currentStep === 'wallet-select' && <WalletSelectStep />}
-        {currentStep === 'no-wallet' && <NoWalletStep />}
+        {renderCurrentStep()}
       </div>
 
       {/* Floating debug button */}
@@ -1132,14 +1261,66 @@ const PaymentFlow = () => {
   );
 };
 
+// Error Boundary Component
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('❌ React Error Boundary caught error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl p-8 max-w-md w-full text-center">
+            <div className="text-red-500 text-6xl mb-4">⚠️</div>
+            <h1 className="text-2xl font-bold text-gray-800 mb-4">Something went wrong</h1>
+            <p className="text-gray-600 mb-6">
+              The payment screen encountered an error. Please refresh the page.
+            </p>
+            <div className="space-y-3">
+              <button
+                onClick={() => window.location.reload()}
+                className="w-full bg-purple-600 text-white py-3 px-6 rounded-xl font-semibold hover:bg-purple-700"
+              >
+                Refresh Page
+              </button>
+              <details className="text-left">
+                <summary className="cursor-pointer text-sm text-gray-500">
+                  Technical Details
+                </summary>
+                <pre className="text-xs bg-gray-100 p-2 rounded mt-2 overflow-auto">
+                  {this.state.error?.toString()}
+                </pre>
+              </details>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 // Main App Component with Providers
 const App = () => {
   return (
-    <WagmiProvider config={config}>
-      <QueryClientProvider client={queryClient}>
-        <PaymentFlow />
-      </QueryClientProvider>
-    </WagmiProvider>
+    <ErrorBoundary>
+      <WagmiProvider config={config}>
+        <QueryClientProvider client={queryClient}>
+          <PaymentFlow />
+        </QueryClientProvider>
+      </WagmiProvider>
+    </ErrorBoundary>
   );
 };
 

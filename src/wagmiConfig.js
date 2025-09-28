@@ -11,12 +11,23 @@ const trustWallet = () => injected({
   })
 });
 
-// Create wagmi config with multiple chains
+// MetaMask connector (explicit)
+const metaMask = () => injected({
+  target: () => ({
+    id: 'metaMask',
+    name: 'MetaMask',
+    provider: typeof window !== 'undefined' ?
+      (window.ethereum?.isMetaMask ? window.ethereum : undefined) : undefined,
+  })
+});
+
+// Create wagmi config with mobile-focused wallets only
 export const config = createConfig({
   chains: [mainnet, bsc, polygon, arbitrum, optimism, avalanche],
   connectors: [
-    injected(),
     trustWallet(),
+    metaMask(),
+    injected(), // Generic fallback
     coinbaseWallet({
       appName: 'Coinley Payment',
     }),
