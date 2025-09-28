@@ -1,6 +1,6 @@
 import { createConfig, http } from 'wagmi';
 import { mainnet, bsc, polygon, arbitrum, optimism, avalanche } from 'wagmi/chains';
-import { injected, coinbaseWallet } from 'wagmi/connectors';
+import { injected } from 'wagmi/connectors';
 
 // Trust Wallet connector
 const trustWallet = () => injected({
@@ -27,10 +27,7 @@ export const config = createConfig({
   connectors: [
     trustWallet(),
     metaMask(),
-    injected(), // Generic fallback
-    coinbaseWallet({
-      appName: 'Coinley Payment',
-    }),
+    injected(), // Generic fallback and Coinbase support
   ],
   transports: {
     [mainnet.id]: http(),

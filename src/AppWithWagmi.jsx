@@ -147,6 +147,7 @@ const PaymentFlow = () => {
   const [approvalHash, setApprovalHash] = useState(null);
   const [paymentHash, setPaymentHash] = useState(null);
   const [connectionAttempts, setConnectionAttempts] = useState(0);
+  const [hasStartedApproval, setHasStartedApproval] = useState(false);
 
   // Address persistence to handle reconnection issues
   const [persistedAddress, setPersistedAddress] = useState(
@@ -318,33 +319,72 @@ const PaymentFlow = () => {
       // Priority order: Trust Wallet → MetaMask → Coinbase → Generic
       if (isTrustWallet && trustConnector) {
         console.log('🛡️ Trust Wallet detected - connecting with Trust connector');
-        connect({ connector: trustConnector }).catch(err => {
-          console.error('❌ Trust Wallet connection failed:', err);
-          // Fallback to injected for Trust Wallet
-          if (injectedConnector) {
-            console.log('🔄 Falling back to injected connector for Trust Wallet');
-            connect({ connector: injectedConnector }).catch(fallbackErr => {
-              console.error('❌ Trust Wallet injected fallback failed:', fallbackErr);
+        try {
+          const connectPromise = connect({ connector: trustConnector });
+          if (connectPromise && typeof connectPromise.catch === 'function') {
+            connectPromise.catch(err => {
+              console.error('❌ Trust Wallet connection failed:', err);
+              // Fallback to injected for Trust Wallet
+              if (injectedConnector) {
+                console.log('🔄 Falling back to injected connector for Trust Wallet');
+                const fallbackPromise = connect({ connector: injectedConnector });
+                if (fallbackPromise && typeof fallbackPromise.catch === 'function') {
+                  fallbackPromise.catch(fallbackErr => {
+                    console.error('❌ Trust Wallet injected fallback failed:', fallbackErr);
+                  });
+                }
+              }
             });
+          } else {
+            console.warn('⚠️ Trust Wallet connect did not return a promise');
           }
-        });
+        } catch (err) {
+          console.error('❌ Trust Wallet connection threw error:', err);
+        }
       } else if (isMetaMask && metaMaskConnector) {
         console.log('🦊 MetaMask detected - connecting with MetaMask connector');
-        connect({ connector: metaMaskConnector }).catch(err => {
-          console.error('❌ MetaMask connection failed:', err);
-        });
+        try {
+          const connectPromise = connect({ connector: metaMaskConnector });
+          if (connectPromise && typeof connectPromise.catch === 'function') {
+            connectPromise.catch(err => {
+              console.error('❌ MetaMask connection failed:', err);
+            });
+          } else {
+            console.warn('⚠️ MetaMask connect did not return a promise');
+          }
+        } catch (err) {
+          console.error('❌ MetaMask connection threw error:', err);
+        }
       } else if (isCoinbase && coinbaseConnector) {
         console.log('💙 Coinbase detected - connecting with Coinbase connector');
-        connect({ connector: coinbaseConnector }).catch(err => {
-          console.error('❌ Coinbase connection failed:', err);
-          // For Coinbase, don't retry automatically to avoid loops
-          console.log('💙 Coinbase auto-connect failed - user will need to connect manually');
-        });
+        try {
+          const connectPromise = connect({ connector: coinbaseConnector });
+          if (connectPromise && typeof connectPromise.catch === 'function') {
+            connectPromise.catch(err => {
+              console.error('❌ Coinbase connection failed:', err);
+              // For Coinbase, don't retry automatically to avoid loops
+              console.log('💙 Coinbase auto-connect failed - user will need to connect manually');
+            });
+          } else {
+            console.warn('⚠️ Coinbase connect did not return a promise');
+          }
+        } catch (err) {
+          console.error('❌ Coinbase connection threw error:', err);
+        }
       } else if (typeof window.ethereum !== 'undefined' && injectedConnector) {
         console.log('💉 Generic wallet detected - using injected connector');
-        connect({ connector: injectedConnector }).catch(err => {
-          console.error('❌ Injected connector failed:', err);
-        });
+        try {
+          const connectPromise = connect({ connector: injectedConnector });
+          if (connectPromise && typeof connectPromise.catch === 'function') {
+            connectPromise.catch(err => {
+              console.error('❌ Injected connector failed:', err);
+            });
+          } else {
+            console.warn('⚠️ Injected connect did not return a promise');
+          }
+        } catch (err) {
+          console.error('❌ Injected connection threw error:', err);
+        }
       } else if (isMobile()) {
         console.log('📱 Mobile device - showing wallet selection');
         setCurrentStep('wallet-select');
@@ -390,12 +430,15 @@ const PaymentFlow = () => {
       if (chain?.id !== targetChainId) {
         console.log(`🔗 Switching to chain ${targetChainId} from ${chain?.id}`);
         switchChain({ chainId: targetChainId });
-      } else {
-        // Start the automatic approval process
+      } else if (!hasStartedApproval && !processing) {
+        // Start the automatic approval process only once
         console.log('🚀 Chain correct, starting automatic approval in 1.5s...');
+        setHasStartedApproval(true);
         setTimeout(() => {
           handleAutomaticApproval();
         }, 1500);
+      } else {
+        console.log('⚠️ Skipping approval - already started or processing');
       }
     } else if (!isConnected && effectiveAddress && !processing) {
       console.warn('⚠️ Have address but not connected - attempting reconnection...');
@@ -403,12 +446,21 @@ const PaymentFlow = () => {
       const injectedConnector = connectors.find(c => c.id === 'injected');
       if (injectedConnector && connectionAttempts < 3) {
         setConnectionAttempts(prev => prev + 1);
-        connect({ connector: injectedConnector }).catch(err => {
-          console.error('❌ Reconnection failed:', err);
-        });
+        try {
+          const connectPromise = connect({ connector: injectedConnector });
+          if (connectPromise && typeof connectPromise.catch === 'function') {
+            connectPromise.catch(err => {
+              console.error('❌ Reconnection failed:', err);
+            });
+          } else {
+            console.warn('⚠️ Reconnection connect did not return a promise');
+          }
+        } catch (err) {
+          console.error('❌ Reconnection threw error:', err);
+        }
       }
     }
-  }, [isConnected, effectiveAddress, chain, paymentData.chainId, processing, connectors, connect, connectionAttempts]);
+  }, [isConnected, effectiveAddress, chain, paymentData.chainId, processing, connectors, connect, connectionAttempts, hasStartedApproval]);
 
   // Enhanced Trust Wallet specific debugging and connection
   useEffect(() => {
@@ -450,17 +502,35 @@ const PaymentFlow = () => {
           if (trustConnector) {
             console.log('🛡️ Attempting Trust Wallet connector...');
             setConnectionAttempts(prev => prev + 1);
-            connect({ connector: trustConnector }).catch(err => {
-              console.error('❌ Trust Wallet connector failed:', err.message, err.code);
+            try {
+              const connectPromise = connect({ connector: trustConnector });
+              if (connectPromise && typeof connectPromise.catch === 'function') {
+                connectPromise.catch(err => {
+                  console.error('❌ Trust Wallet connector failed:', err.message, err.code);
 
-              // Fallback to injected if Trust connector fails
-              if (injectedConnector) {
-                console.log('🔄 Trust Wallet failed, trying injected connector...');
-                connect({ connector: injectedConnector }).catch(fallbackErr => {
-                  console.error('❌ Injected fallback also failed:', fallbackErr.message, fallbackErr.code);
+                  // Fallback to injected if Trust connector fails
+                  if (injectedConnector) {
+                    console.log('🔄 Trust Wallet failed, trying injected connector...');
+                    try {
+                      const fallbackPromise = connect({ connector: injectedConnector });
+                      if (fallbackPromise && typeof fallbackPromise.catch === 'function') {
+                        fallbackPromise.catch(fallbackErr => {
+                          console.error('❌ Injected fallback also failed:', fallbackErr.message, fallbackErr.code);
+                        });
+                      } else {
+                        console.warn('⚠️ Injected fallback connect did not return a promise');
+                      }
+                    } catch (fallbackError) {
+                      console.error('❌ Injected fallback threw error:', fallbackError);
+                    }
+                  }
                 });
+              } else {
+                console.warn('⚠️ Trust Wallet connect did not return a promise');
               }
-            });
+            } catch (err) {
+              console.error('❌ Trust Wallet connection threw error:', err);
+            }
           } else {
             console.warn('⚠️ No Trust Wallet connector found in retry attempt');
           }
@@ -504,6 +574,7 @@ const PaymentFlow = () => {
       setCurrentStep('failure');
       setProcessing(false);
       setIsWriting(false);
+      setHasStartedApproval(false); // Reset so user can try again
       return;
     }
 
@@ -522,6 +593,7 @@ const PaymentFlow = () => {
       setCurrentStep('failure');
       setProcessing(false);
       setIsWriting(false);
+      setHasStartedApproval(false); // Reset so user can try again
       return;
     }
 
@@ -532,6 +604,7 @@ const PaymentFlow = () => {
       setCurrentStep('failure');
       setProcessing(false);
       setIsWriting(false);
+      setHasStartedApproval(false); // Reset so user can try again
       return;
     }
 
@@ -1067,13 +1140,22 @@ const PaymentFlow = () => {
             console.log('🛡️ Manual Trust Wallet connection attempt');
             const trustConnector = connectors.find(c => c.id === 'trustWallet');
             if (trustConnector) {
-              connect({ connector: trustConnector }).catch(err => {
-                console.error('❌ Manual Trust Wallet connection failed:', err);
-                // Try deep link as fallback
-                const trustUrl = `https://link.trustwallet.com/open_url?coin_id=60&url=${encodeURIComponent(window.location.href)}`;
-                console.log('🔗 Trying Trust Wallet deep link:', trustUrl);
-                window.location.href = trustUrl;
-              });
+              try {
+                const connectPromise = connect({ connector: trustConnector });
+                if (connectPromise && typeof connectPromise.catch === 'function') {
+                  connectPromise.catch(err => {
+                    console.error('❌ Manual Trust Wallet connection failed:', err);
+                    // Try deep link as fallback
+                    const trustUrl = `https://link.trustwallet.com/open_url?coin_id=60&url=${encodeURIComponent(window.location.href)}`;
+                    console.log('🔗 Trying Trust Wallet deep link:', trustUrl);
+                    window.location.href = trustUrl;
+                  });
+                } else {
+                  console.warn('⚠️ Manual Trust Wallet connect did not return a promise');
+                }
+              } catch (err) {
+                console.error('❌ Manual Trust Wallet connection threw error:', err);
+              }
             }
           }}
           className="block w-full bg-blue-600 text-white py-4 px-6 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
@@ -1087,13 +1169,22 @@ const PaymentFlow = () => {
             console.log('🦊 Manual MetaMask connection attempt');
             const metaMaskConnector = connectors.find(c => c.id === 'metaMask');
             if (metaMaskConnector) {
-              connect({ connector: metaMaskConnector }).catch(err => {
-                console.error('❌ Manual MetaMask connection failed:', err);
-                // Try deep link as fallback
-                const metaMaskUrl = `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}${window.location.search}`;
-                console.log('🔗 Trying MetaMask deep link:', metaMaskUrl);
-                window.location.href = metaMaskUrl;
-              });
+              try {
+                const connectPromise = connect({ connector: metaMaskConnector });
+                if (connectPromise && typeof connectPromise.catch === 'function') {
+                  connectPromise.catch(err => {
+                    console.error('❌ Manual MetaMask connection failed:', err);
+                    // Try deep link as fallback
+                    const metaMaskUrl = `https://metamask.app.link/dapp/${window.location.host}${window.location.pathname}${window.location.search}`;
+                    console.log('🔗 Trying MetaMask deep link:', metaMaskUrl);
+                    window.location.href = metaMaskUrl;
+                  });
+                } else {
+                  console.warn('⚠️ Manual MetaMask connect did not return a promise');
+                }
+              } catch (err) {
+                console.error('❌ Manual MetaMask connection threw error:', err);
+              }
             }
           }}
           className="block w-full bg-orange-500 text-white py-4 px-6 rounded-xl font-semibold hover:bg-orange-600 transition-colors"
@@ -1109,11 +1200,20 @@ const PaymentFlow = () => {
             if (coinbaseConnector) {
               // For Coinbase, try connector first without deep link fallback to avoid loops
               console.log('💙 Attempting Coinbase connector without deep link fallback');
-              connect({ connector: coinbaseConnector }).catch(err => {
-                console.error('❌ Coinbase connection failed:', err);
-                // Show error instead of redirecting to avoid infinite loops
-                alert('Coinbase Wallet connection failed. Please make sure Coinbase Wallet is installed and try again.');
-              });
+              try {
+                const connectPromise = connect({ connector: coinbaseConnector });
+                if (connectPromise && typeof connectPromise.catch === 'function') {
+                  connectPromise.catch(err => {
+                    console.error('❌ Coinbase connection failed:', err);
+                    // Show error instead of redirecting to avoid infinite loops
+                    alert('Coinbase Wallet connection failed. Please make sure Coinbase Wallet is installed and try again.');
+                  });
+                } else {
+                  console.warn('⚠️ Manual Coinbase connect did not return a promise');
+                }
+              } catch (err) {
+                console.error('❌ Manual Coinbase connection threw error:', err);
+              }
             }
           }}
           className="block w-full bg-indigo-600 text-white py-4 px-6 rounded-xl font-semibold hover:bg-indigo-700 transition-colors"
