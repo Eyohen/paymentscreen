@@ -148,6 +148,8 @@ const PaymentFlow = () => {
   const [paymentHash, setPaymentHash] = useState(null);
   const [connectionAttempts, setConnectionAttempts] = useState(0);
   const [hasStartedApproval, setHasStartedApproval] = useState(false);
+  const [lastConnectionTime, setLastConnectionTime] = useState(0);
+  const [connectionStable, setConnectionStable] = useState(false);
 
   // Address persistence to handle reconnection issues
   const [persistedAddress, setPersistedAddress] = useState(
@@ -421,24 +423,49 @@ const PaymentFlow = () => {
     return () => window.removeEventListener('focus', handleFocus);
   }, [isConnected, connectors, connect, connectionAttempts, currentStep]);
 
-  // Handle successful connection
+  // Handle successful connection with debouncing
   useEffect(() => {
     if (isConnected && effectiveAddress) {
+      const now = Date.now();
+
+      // 🔧 DEBOUNCE: Ignore rapid connection events (especially from Coinbase)
+      if (now - lastConnectionTime < 1000) {
+        console.log('⚠️ Ignoring rapid connection event (debounced)');
+        return;
+      }
+
+      setLastConnectionTime(now);
+
+      // 🔧 COINBASE FIX: Detect if this is Coinbase Wallet
+      const isCoinbaseWallet = typeof window !== 'undefined' &&
+        (window.ethereum?.isCoinbaseWallet || window.ethereum?.providers?.some(p => p.isCoinbaseWallet));
+
+      if (isCoinbaseWallet) {
+        console.log('💙 Coinbase Wallet detected - using stable connection handling');
+        // For Coinbase, wait longer before considering connection stable
+        setTimeout(() => {
+          setConnectionStable(true);
+        }, 2000);
+      } else {
+        setConnectionStable(true);
+      }
+
       console.log('🎯 Connection successful with address:', effectiveAddress);
+
       // Check if we're on the right chain
       const targetChainId = parseInt(paymentData.chainId);
       if (chain?.id !== targetChainId) {
         console.log(`🔗 Switching to chain ${targetChainId} from ${chain?.id}`);
         switchChain({ chainId: targetChainId });
-      } else if (!hasStartedApproval && !processing) {
-        // Start the automatic approval process only once
+      } else if (!hasStartedApproval && !processing && connectionStable) {
+        // Start the automatic approval process only once and only when connection is stable
         console.log('🚀 Chain correct, starting automatic approval in 1.5s...');
         setHasStartedApproval(true);
         setTimeout(() => {
           handleAutomaticApproval();
         }, 1500);
       } else {
-        console.log('⚠️ Skipping approval - already started or processing');
+        console.log('⚠️ Skipping approval - already started, processing, or connection not stable');
       }
     } else if (!isConnected && effectiveAddress && !processing) {
       console.warn('⚠️ Have address but not connected - attempting reconnection...');
@@ -460,7 +487,7 @@ const PaymentFlow = () => {
         }
       }
     }
-  }, [isConnected, effectiveAddress, chain, paymentData.chainId, processing, connectors, connect, connectionAttempts, hasStartedApproval]);
+  }, [isConnected, effectiveAddress, chain, paymentData.chainId, processing, connectors, connect, connectionAttempts, hasStartedApproval, lastConnectionTime, connectionStable]);
 
   // Enhanced Trust Wallet specific debugging and connection
   useEffect(() => {
