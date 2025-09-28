@@ -262,6 +262,38 @@ const PaymentFlow = () => {
       search: window.location.search,
       searchParams: Object.fromEntries(new URLSearchParams(window.location.search))
     });
+
+    // Detailed analysis of payment parameters from QR code
+    const urlParams = new URLSearchParams(window.location.search);
+    console.log('🔍 CRITICAL PAYMENT PARAMETERS FROM QR:');
+    console.log('   💰 amount:', urlParams.get('amount'));
+    console.log('   🪙 token:', urlParams.get('token'));
+    console.log('   📄 tokenContract:', urlParams.get('tokenContract'));
+    console.log('   🏗️ contractAddress:', urlParams.get('contractAddress'));
+    console.log('   🆔 paymentId:', urlParams.get('paymentId'));
+    console.log('   🔗 chainId:', urlParams.get('chainId'));
+    console.log('   👤 recipient1:', urlParams.get('recipient1'));
+    console.log('   👤 recipient2:', urlParams.get('recipient2'));
+    console.log('   📊 recipient1Percentage:', urlParams.get('recipient1Percentage'));
+    console.log('   📊 recipient2Percentage:', urlParams.get('recipient2Percentage'));
+
+    console.log('🔍 ALL QR PARAMETERS:');
+    for (const [key, value] of urlParams.entries()) {
+      console.log(`   ${key}: ${value}`);
+    }
+
+    // Check if critical parameters are missing
+    const missingParams = [];
+    if (!urlParams.get('tokenContract')) missingParams.push('tokenContract');
+    if (!urlParams.get('contractAddress')) missingParams.push('contractAddress');
+    if (!urlParams.get('paymentId')) missingParams.push('paymentId');
+    if (!urlParams.get('chainId')) missingParams.push('chainId');
+
+    if (missingParams.length > 0) {
+      console.error('❌ MISSING CRITICAL PARAMETERS IN QR CODE:', missingParams);
+    } else {
+      console.log('✅ All critical parameters present in QR code');
+    }
   }, [paymentData]);
 
   // Simplified mobile-focused auto-connect
@@ -305,6 +337,8 @@ const PaymentFlow = () => {
         console.log('💙 Coinbase detected - connecting with Coinbase connector');
         connect({ connector: coinbaseConnector }).catch(err => {
           console.error('❌ Coinbase connection failed:', err);
+          // For Coinbase, don't retry automatically to avoid loops
+          console.log('💙 Coinbase auto-connect failed - user will need to connect manually');
         });
       } else if (typeof window.ethereum !== 'undefined' && injectedConnector) {
         console.log('💉 Generic wallet detected - using injected connector');
@@ -473,8 +507,41 @@ const PaymentFlow = () => {
       return;
     }
 
+    // Critical: Check if we have required contract addresses
+    if (!paymentData.tokenContract || paymentData.tokenContract.trim() === '') {
+      const errorMsg = 'Cannot execute payment: Token contract address is missing from payment data.';
+      console.error('❌', errorMsg);
+      console.error('❌ Payment data check:', {
+        hasTokenContract: !!paymentData.tokenContract,
+        tokenContract: paymentData.tokenContract,
+        hasContractAddress: !!paymentData.contractAddress,
+        contractAddress: paymentData.contractAddress,
+        paymentDataKeys: Object.keys(paymentData)
+      });
+      setWriteError(new Error(errorMsg));
+      setCurrentStep('failure');
+      setProcessing(false);
+      setIsWriting(false);
+      return;
+    }
+
+    if (!paymentData.contractAddress || paymentData.contractAddress.trim() === '') {
+      const errorMsg = 'Cannot execute payment: Payment splitter contract address is missing from payment data.';
+      console.error('❌', errorMsg);
+      setWriteError(new Error(errorMsg));
+      setCurrentStep('failure');
+      setProcessing(false);
+      setIsWriting(false);
+      return;
+    }
+
     try {
       console.log('📋 Starting approval and payment with address:', effectiveAddress);
+      console.log('📋 Contract addresses verified:', {
+        tokenContract: paymentData.tokenContract,
+        splitterContract: paymentData.contractAddress
+      });
+
       setIsWriting(true);
       setWriteError(null);
 
@@ -483,6 +550,8 @@ const PaymentFlow = () => {
       const amountInUnits = parseUnits(paymentData.amount, decimals);
 
       console.log('Step 0: Checking token balance...');
+      console.log('Step 0: Using token contract:', paymentData.tokenContract);
+
       const balance = await readContract(config, {
         address: paymentData.tokenContract,
         abi: erc20Abi,
@@ -1038,12 +1107,12 @@ const PaymentFlow = () => {
             console.log('💙 Manual Coinbase connection attempt');
             const coinbaseConnector = connectors.find(c => c.id === 'coinbaseWallet');
             if (coinbaseConnector) {
+              // For Coinbase, try connector first without deep link fallback to avoid loops
+              console.log('💙 Attempting Coinbase connector without deep link fallback');
               connect({ connector: coinbaseConnector }).catch(err => {
-                console.error('❌ Manual Coinbase connection failed:', err);
-                // Try deep link as fallback
-                const coinbaseUrl = `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(window.location.href)}`;
-                console.log('🔗 Trying Coinbase deep link:', coinbaseUrl);
-                window.location.href = coinbaseUrl;
+                console.error('❌ Coinbase connection failed:', err);
+                // Show error instead of redirecting to avoid infinite loops
+                alert('Coinbase Wallet connection failed. Please make sure Coinbase Wallet is installed and try again.');
               });
             }
           }}
