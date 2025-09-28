@@ -1051,29 +1051,6 @@ const PaymentFlow = () => {
         >
           💙 Coinbase Wallet
         </button>
-
-        {/* Fallback for any other wallet */}
-        <button
-          onClick={() => {
-            console.log('💉 Manual injected connector attempt');
-            const injectedConnector = connectors.find(c => c.id === 'injected');
-            if (injectedConnector) {
-              connect({ connector: injectedConnector }).catch(err => {
-                console.error('❌ Manual injected connection failed:', err);
-              });
-            }
-          }}
-          className="block w-full bg-gray-500 text-white py-3 px-6 rounded-xl font-semibold hover:bg-gray-600 transition-colors"
-        >
-          🔌 Other Wallet
-        </button>
-
-        <button
-          onClick={() => setCurrentStep('approval')}
-          className="block w-full bg-gray-300 text-gray-700 py-3 px-6 rounded-xl font-semibold hover:bg-gray-400 transition-colors"
-        >
-          Skip (Already Connected)
-        </button>
       </div>
 
       <div className="mt-6 text-xs text-gray-500">
