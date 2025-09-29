@@ -116,28 +116,82 @@ const createApiClient = () => {
 
   return {
     async getContractInfo(chainId) {
+      const endpoint = `${apiUrl}/api/payments/contract/${chainId}`;
+      console.log('🔗 API Request Details:', {
+        endpoint,
+        chainId,
+        apiUrl,
+        hasApiKey: !!apiKey,
+        hasApiSecret: !!apiSecret,
+        keyLength: apiKey ? apiKey.length : 0,
+        secretLength: apiSecret ? apiSecret.length : 0
+      });
+
       try {
-        const response = await fetch(`${apiUrl}/api/payments/contract/${chainId}`, {
-          headers: {
-            'Content-Type': 'application/json',
-            'X-API-Key': apiKey,
-            'X-API-Secret': apiSecret
-          }
+        const headers = {
+          'Content-Type': 'application/json'
+        };
+
+        // Only add auth headers if we have them (lowercase as per backend)
+        if (apiKey && apiSecret) {
+          headers['x-api-key'] = apiKey;
+          headers['x-api-secret'] = apiSecret;
+        } else {
+          console.warn('⚠️ No API credentials configured - trying public access');
+        }
+
+        console.log('📡 Making request to:', endpoint);
+        console.log('📋 Request headers:', headers);
+
+        const response = await fetch(endpoint, {
+          method: 'GET',
+          headers,
+          mode: 'cors' // Explicitly set CORS mode
+        });
+
+        console.log('📥 Response received:', {
+          status: response.status,
+          statusText: response.statusText,
+          headers: Object.fromEntries(response.headers.entries()),
+          url: response.url
         });
 
         if (!response.ok) {
-          throw new Error('Contract not supported on this network');
+          const errorText = await response.text();
+          console.error('❌ HTTP Error Response:', {
+            status: response.status,
+            statusText: response.statusText,
+            body: errorText
+          });
+          throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
         }
 
         const result = await response.json();
+        console.log('📄 Response JSON:', result);
+
         if (!result.success) {
-          throw new Error('Contract not supported on this network');
+          console.error('❌ API returned failure:', result);
+          throw new Error(result.message || 'Contract not supported on this network');
         }
 
+        console.log('✅ Contract info received:', result.contractInfo);
         return result.contractInfo;
       } catch (error) {
-        console.error('❌ Failed to get contract info:', error);
-        throw new Error(error.message || 'Failed to get contract information');
+        console.error('❌ Complete error details:', {
+          message: error.message,
+          name: error.name,
+          stack: error.stack,
+          cause: error.cause
+        });
+
+        // Check for specific error types
+        if (error.name === 'TypeError' && error.message.includes('fetch')) {
+          throw new Error(`Network error: Unable to reach backend at ${apiUrl}. Check CORS settings.`);
+        } else if (error.message.includes('CORS')) {
+          throw new Error(`CORS error: Backend not allowing requests from payment screen domain.`);
+        } else {
+          throw new Error(error.message || 'Failed to get contract information');
+        }
       }
     },
 
@@ -153,8 +207,8 @@ const createApiClient = () => {
         };
 
         if (apiKey && apiSecret) {
-          headers['X-API-Key'] = apiKey;
-          headers['X-API-Secret'] = apiSecret;
+          headers['x-api-key'] = apiKey;
+          headers['x-api-secret'] = apiSecret;
         }
 
         const response = await fetch(`${apiUrl}/api/payments/process`, {
@@ -466,16 +520,39 @@ const EnhancedMobilePaymentFlow = () => {
 
       let contractInfo;
       try {
+        addDebugLog('debug', '🌐 API Environment Check', {
+          apiUrl: process.env.REACT_APP_COINLEY_API_URL || 'https://coinley-backend-production.up.railway.app',
+          hasApiKey: !!(process.env.REACT_APP_COINLEY_API_KEY || ''),
+          hasApiSecret: !!(process.env.REACT_APP_COINLEY_API_SECRET || ''),
+          endpoint: `/api/payments/contract/${chainId}`,
+          currentDomain: window.location.origin,
+          userAgent: navigator.userAgent
+        });
+
         contractInfo = await api.getContractInfo(chainId);
         addDebugLog('success', '✅ Contract ABI fetched from backend', {
           hasAbi: !!contractInfo?.abi,
-          contractAddress: contractInfo?.address
+          contractAddress: contractInfo?.address,
+          abiLength: contractInfo?.abi?.length || 0
         });
       } catch (abiError) {
         addDebugLog('error', '❌ Failed to fetch contract ABI', {
           error: abiError.message,
           chainId,
-          stack: abiError.stack
+          stack: abiError.stack,
+          possibleCauses: [
+            'CORS policy blocking cross-origin request',
+            'Backend server down or unreachable',
+            'Invalid API credentials',
+            'Network connectivity issue',
+            'Chain ID not supported by backend'
+          ],
+          debugSteps: [
+            '1. Check browser network tab for actual HTTP status',
+            '2. Verify backend CORS settings allow payment screen domain',
+            '3. Test API endpoint directly in browser',
+            '4. Check environment variables are loaded'
+          ]
         });
         throw new Error(`Failed to fetch contract ABI: ${abiError.message}`);
       }
