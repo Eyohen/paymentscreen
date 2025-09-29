@@ -94,7 +94,7 @@ const getApiCredentials = () => {
   return {
     apiKey: process.env.REACT_APP_COINLEY_API_KEY || '',
     apiSecret: process.env.REACT_APP_COINLEY_API_SECRET || '',
-    apiUrl: process.env.REACT_APP_COINLEY_API_URL || 'https://coinley-backend-production.up.railway.app'
+    apiUrl: process.env.REACT_APP_COINLEY_API_URL || 'https://talented-mercy-production.up.railway.app'
   };
 };
 

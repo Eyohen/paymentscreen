@@ -110,7 +110,7 @@ const getValidatedUrlParams = () => {
 
 // Enhanced API client (aligned with paymentAPI.js structure)
 const createApiClient = () => {
-  const apiUrl = process.env.REACT_APP_COINLEY_API_URL || 'https://coinley-backend-production.up.railway.app';
+  const apiUrl = process.env.REACT_APP_COINLEY_API_URL || 'https://talented-mercy-production.up.railway.app';
   const apiKey = process.env.REACT_APP_COINLEY_API_KEY || '';
   const apiSecret = process.env.REACT_APP_COINLEY_API_SECRET || '';
 
@@ -514,14 +514,14 @@ const EnhancedMobilePaymentFlow = () => {
 
       addDebugLog('debug', '🔗 Fetching contract ABI from backend', {
         chainId,
-        apiUrl: process.env.REACT_APP_COINLEY_API_URL || 'https://coinley-backend-production.up.railway.app',
+        apiUrl: process.env.REACT_APP_COINLEY_API_URL || 'https://talented-mercy-production.up.railway.app',
         endpoint: `/api/payments/contract/${chainId}`
       });
 
       let contractInfo;
       try {
         addDebugLog('debug', '🌐 API Environment Check', {
-          apiUrl: process.env.REACT_APP_COINLEY_API_URL || 'https://coinley-backend-production.up.railway.app',
+          apiUrl: process.env.REACT_APP_COINLEY_API_URL || 'https://talented-mercy-production.up.railway.app',
           hasApiKey: !!(process.env.REACT_APP_COINLEY_API_KEY || ''),
           hasApiSecret: !!(process.env.REACT_APP_COINLEY_API_SECRET || ''),
           endpoint: `/api/payments/contract/${chainId}`,
