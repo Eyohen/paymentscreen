@@ -22,55 +22,55 @@ const detectWalletEnvironment = () => {
   };
 };
 
-// Enhanced parameter validation (aligned with deep link utils)
+// SIMPLE parameter validation - only check if we have basic data
 const validatePaymentParameters = (params) => {
-  const required = ['paymentId', 'contractAddress', 'tokenContract', 'chainId', 'amount'];
-  const missing = required.filter(param => !params[param] || params[param].trim() === '');
+  console.log('🔍 SIMPLE Payment parameter validation:', params);
 
-  if (missing.length > 0) {
-    throw new Error(`Missing required parameters: ${missing.join(', ')}`);
+  // Only require paymentId OR splitterPaymentId - very relaxed
+  const hasPaymentId = params.paymentId || params.payment_id || params.splitterPaymentId;
+
+  if (!hasPaymentId) {
+    console.error('❌ No payment ID found:', Object.keys(params));
+    throw new Error('Payment ID is required');
   }
 
-  // Validate addresses using the same regex as coinley-test
-  const addressFields = ['contractAddress', 'tokenContract', 'recipient1', 'recipient2', 'recipient3'];
-  for (const field of addressFields) {
-    if (params[field] && !/^0x[a-fA-F0-9]{40}$/.test(params[field])) {
-      throw new Error(`Invalid address format for ${field}: ${params[field]}`);
-    }
-  }
-
-  // Validate numeric fields
-  const numericFields = ['amount', 'chainId', 'recipient1Percentage', 'recipient2Percentage', 'recipient3Percentage', 'tokenDecimals'];
-  for (const field of numericFields) {
-    if (params[field] !== undefined && params[field] !== '' && isNaN(Number(params[field]))) {
-      throw new Error(`Invalid numeric value for ${field}: ${params[field]}`);
-    }
-  }
-
+  console.log('✅ SIMPLE Validation passed - found payment ID:', hasPaymentId);
   return true;
 };
 
-// Enhanced URL parameter extraction (aligned with deepLinkUtils)
+// Enhanced URL parameter extraction (FLEXIBLE VERSION - handles multiple parameter names)
 const getValidatedUrlParams = () => {
   const params = new URLSearchParams(window.location.search);
+
+  // Helper function to get parameter by multiple possible names
+  const getParam = (names) => {
+    for (const name of names) {
+      const value = params.get(name);
+      if (value && value.trim() !== '') {
+        return value.trim();
+      }
+    }
+    return '';
+  };
+
   const paymentData = {
     // Basic payment info
-    amount: params.get('amount') || '',
-    token: params.get('token') || 'USDC',
-    merchant: params.get('merchant') || 'Demo Merchant',
-    productAmount: params.get('productAmount') || '',
-    platformFee: params.get('platformFee') || '0',
-    networkFee: params.get('networkFee') || '0',
-    network: params.get('network') || 'Ethereum Mainnet',
+    amount: getParam(['amount']) || '',
+    token: getParam(['token']) || 'USDC',
+    merchant: getParam(['merchant']) || 'Demo Merchant',
+    productAmount: getParam(['productAmount']) || '',
+    platformFee: getParam(['platformFee']) || '0',
+    networkFee: getParam(['networkFee']) || '0',
+    network: getParam(['network']) || 'Ethereum Mainnet',
 
-    // Contract addresses (critical for PaymentSplitter)
-    contractAddress: params.get('contractAddress') || '',
-    tokenContract: params.get('tokenContract') || '',
-    chainId: params.get('chainId') || '1',
+    // Contract addresses (critical for PaymentSplitter) - CHECK MULTIPLE NAMES
+    contractAddress: getParam(['contractAddress', 'contract_address', 'paymentContract', 'contract']) || '',
+    tokenContract: getParam(['tokenContract', 'token_contract', 'tokenAddress', 'token_address']) || '',
+    chainId: getParam(['chainId', 'chain_id', 'networkId', 'network_id']) || '1',
 
-    // Payment ID (required for backend communication)
-    paymentId: params.get('paymentId') || '',
-    splitterPaymentId: params.get('splitterPaymentId') || '',
+    // Payment ID (required for backend communication) - CHECK MULTIPLE NAMES
+    paymentId: getParam(['paymentId', 'payment_id', 'splitterPaymentId']) || '',
+    splitterPaymentId: getParam(['splitterPaymentId', 'paymentId', 'payment_id']) || '',
 
     // Split payment parameters (aligned with useTransactionHandling)
     recipient1: params.get('recipient1') || '',
@@ -88,6 +88,19 @@ const getValidatedUrlParams = () => {
     isMobile: params.get('isMobile') === 'true',
     preferredWallet: params.get('preferredWallet') || 'metamask'
   };
+
+  // 🔍 Debug: Log all URL parameters for troubleshooting
+  console.log('🔍 Payment Screen - URL Parameters Debug:', {
+    allParams: Object.fromEntries(params.entries()),
+    extractedPaymentData: paymentData,
+    criticalParams: {
+      paymentId: paymentData.paymentId,
+      contractAddress: paymentData.contractAddress,
+      tokenContract: paymentData.tokenContract,
+      chainId: paymentData.chainId,
+      amount: paymentData.amount
+    }
+  });
 
   // Validate parameters using our enhanced validation
   validatePaymentParameters(paymentData);
@@ -184,6 +197,8 @@ const EnhancedMobilePaymentFlow = () => {
   const [transactionHash, setTransactionHash] = useState('');
   const [transactionStep, setTransactionStep] = useState('idle'); // approve, splitPayment, processing
   const [connectionAttempts, setConnectionAttempts] = useState(0);
+  const [debugLogs, setDebugLogs] = useState([]);
+  const [showDebugPanel, setShowDebugPanel] = useState(true); // Show debug by default
 
   // Wagmi hooks
   const { address, isConnected, chain } = useAccount();
@@ -194,28 +209,53 @@ const EnhancedMobilePaymentFlow = () => {
   // API client
   const api = createApiClient();
 
+  // Debug logging function
+  const addDebugLog = (type, message, data = null) => {
+    const timestamp = new Date().toLocaleTimeString();
+    const logEntry = {
+      id: Date.now() + Math.random(),
+      type,
+      message,
+      data,
+      timestamp
+    };
+    setDebugLogs(prev => [...prev, logEntry].slice(-50)); // Keep last 50 logs
+
+    // Also log to console for developers
+    console.log(`[${type.toUpperCase()}] [${timestamp}] ${message}`, data || '');
+  };
+
   // Initialize payment data on component mount
   useEffect(() => {
     const initializePayment = async () => {
       try {
-        console.log('🔄 Initializing enhanced mobile payment flow...');
-        console.log('🔍 Wallet environment:', walletEnv);
+        addDebugLog('info', '🔄 Initializing enhanced mobile payment flow...');
+        addDebugLog('info', '🔍 Wallet environment detected', walletEnv);
 
         const urlParams = getValidatedUrlParams();
         setPaymentData(urlParams);
 
-        console.log('✅ Payment data validated:', {
+        addDebugLog('success', '✅ Payment data validated', {
           paymentId: urlParams.paymentId,
           chainId: urlParams.chainId,
           amount: urlParams.amount,
           walletDetected: walletEnv.walletType,
           contractAddress: urlParams.contractAddress,
-          tokenContract: urlParams.tokenContract
+          tokenContract: urlParams.tokenContract,
+          recipient1: urlParams.recipient1,
+          recipient2: urlParams.recipient2,
+          recipient1Percentage: urlParams.recipient1Percentage,
+          recipient2Percentage: urlParams.recipient2Percentage,
+          tokenDecimals: urlParams.tokenDecimals,
+          amountInWei: urlParams.amountInWei
         });
 
         setCurrentStep('connection');
       } catch (err) {
-        console.error('❌ Failed to initialize payment:', err);
+        addDebugLog('error', '❌ Failed to initialize payment', {
+          error: err.message,
+          stack: err.stack
+        });
         setError(`Initialization failed: ${err.message}`);
         setCurrentStep('error');
       }
@@ -303,6 +343,10 @@ const EnhancedMobilePaymentFlow = () => {
   // Enhanced payment execution (aligned with useTransactionHandling.js)
   const executePayment = async () => {
     if (!address || !paymentData) {
+      addDebugLog('error', '❌ Missing required data', {
+        hasAddress: !!address,
+        hasPaymentData: !!paymentData
+      });
       setError('Missing wallet connection or payment data');
       return;
     }
@@ -312,7 +356,13 @@ const EnhancedMobilePaymentFlow = () => {
       setError('');
       setCurrentStep('processing');
 
-      console.log('🔄 Starting enhanced payment execution...');
+      addDebugLog('info', '🔄 Starting enhanced payment execution...');
+      addDebugLog('debug', '📊 Payment execution parameters', {
+        address,
+        paymentData,
+        chain: chain?.id,
+        chainName: chain?.name
+      });
 
       // Get token decimals and amount (using exact backend data)
       const decimals = parseInt(paymentData.tokenDecimals) || 6;
@@ -329,6 +379,8 @@ const EnhancedMobilePaymentFlow = () => {
 
       // Step 1: Check token balance
       setTransactionStep('approve');
+      addDebugLog('info', '💰 Step 1: Checking token balance...');
+
       const balance = await readContract(config, {
         address: paymentData.tokenContract,
         abi: erc20Abi,
@@ -336,17 +388,27 @@ const EnhancedMobilePaymentFlow = () => {
         args: [address]
       });
 
-      console.log('💰 Balance check:', {
+      addDebugLog('success', '💰 Balance check complete', {
+        tokenContract: paymentData.tokenContract,
+        userAddress: address,
         balance: balance.toString(),
         required: amountInUnits.toString(),
-        hasEnough: balance >= amountInUnits
+        hasEnough: balance >= amountInUnits,
+        difference: (balance - amountInUnits).toString()
       });
 
       if (balance < amountInUnits) {
+        addDebugLog('error', '❌ Insufficient token balance', {
+          required: amountInUnits.toString(),
+          available: balance.toString(),
+          token: paymentData.token
+        });
         throw new Error(`Insufficient ${paymentData.token} balance. Required: ${paymentData.amount} ${paymentData.token}`);
       }
 
       // Step 2: Check and approve if needed (aligned with useTransactionHandling)
+      addDebugLog('info', '🔐 Step 2: Checking token allowance...');
+
       const allowance = await readContract(config, {
         address: paymentData.tokenContract,
         abi: erc20Abi,
@@ -354,14 +416,16 @@ const EnhancedMobilePaymentFlow = () => {
         args: [address, paymentData.contractAddress]
       });
 
-      console.log('🔐 Allowance check:', {
+      addDebugLog('success', '🔐 Allowance check complete', {
+        spender: paymentData.contractAddress,
         allowance: allowance.toString(),
         required: amountInUnits.toString(),
-        needsApproval: allowance < amountInUnits
+        needsApproval: allowance < amountInUnits,
+        currentAllowance: allowance.toString()
       });
 
       if (allowance < amountInUnits) {
-        console.log('🔐 Executing token approval...');
+        addDebugLog('info', '🔐 Executing token approval...');
 
         const approveHash = await writeContract(config, {
           address: paymentData.tokenContract,
@@ -370,55 +434,118 @@ const EnhancedMobilePaymentFlow = () => {
           args: [paymentData.contractAddress, amountInUnits]
         });
 
-        console.log('✅ Approval transaction:', approveHash);
+        addDebugLog('success', '✅ Approval transaction sent', {
+          transactionHash: approveHash,
+          tokenContract: paymentData.tokenContract,
+          spender: paymentData.contractAddress,
+          amount: amountInUnits.toString()
+        });
+
         setTransactionHash(approveHash);
 
         // Wait for approval confirmation
+        addDebugLog('info', '⏳ Waiting for approval confirmation...');
         await new Promise(resolve => setTimeout(resolve, 3000));
+        addDebugLog('success', '✅ Approval confirmed');
+      } else {
+        addDebugLog('info', '✅ Token already approved, skipping approval step');
       }
 
       // Step 3: Execute split payment (aligned with enhanced transaction handling)
       setTransactionStep('splitPayment');
-      console.log('💸 Executing split payment...');
+      addDebugLog('info', '💸 Step 3: Executing split payment...');
 
       // Get contract ABI from backend (as designed in useTransactionHandling)
       const chainId = parseInt(paymentData.chainId);
-      const contractInfo = await api.getContractInfo(chainId);
-      const { abi } = contractInfo;
 
-      console.log('✅ Contract ABI fetched from backend');
+      addDebugLog('debug', '🔗 Fetching contract ABI from backend', {
+        chainId,
+        apiUrl: process.env.REACT_APP_COINLEY_API_URL || 'https://coinley-backend-production.up.railway.app',
+        endpoint: `/api/payments/contract/${chainId}`
+      });
+
+      let contractInfo;
+      try {
+        contractInfo = await api.getContractInfo(chainId);
+        addDebugLog('success', '✅ Contract ABI fetched from backend', {
+          hasAbi: !!contractInfo?.abi,
+          contractAddress: contractInfo?.address
+        });
+      } catch (abiError) {
+        addDebugLog('error', '❌ Failed to fetch contract ABI', {
+          error: abiError.message,
+          chainId,
+          stack: abiError.stack
+        });
+        throw new Error(`Failed to fetch contract ABI: ${abiError.message}`);
+      }
+
+      const { abi } = contractInfo;
 
       // Create payment details tuple (exact structure from useTransactionHandling)
       const paymentDetails = {
-        token: paymentData.tokenContract,
+        token: paymentData.tokenContract || paymentData.tokenAddress,
         amount: amountInUnits,
-        paymentId: paymentData.paymentId,
-        recipient1: paymentData.recipient1,
-        recipient2: paymentData.recipient2,
-        recipient3: paymentData.recipient3,
-        recipient1Percentage: BigInt(paymentData.recipient1Percentage),
-        recipient2Percentage: BigInt(paymentData.recipient2Percentage),
-        recipient3Percentage: BigInt(paymentData.recipient3Percentage)
+        paymentId: paymentData.paymentId || paymentData.splitterPaymentId,
+        recipient1: paymentData.recipient1 || paymentData.merchantWallet || '0x0000000000000000000000000000000000000000',
+        recipient2: paymentData.recipient2 || paymentData.coinleyWallet || '0x0000000000000000000000000000000000000000',
+        recipient3: paymentData.recipient3 || '0x0000000000000000000000000000000000000000',
+        recipient1Percentage: BigInt(paymentData.recipient1Percentage || 10000),
+        recipient2Percentage: BigInt(paymentData.recipient2Percentage || 0),
+        recipient3Percentage: BigInt(paymentData.recipient3Percentage || 0)
       };
 
-      console.log('🔍 Split payment details:', paymentDetails);
-
-      // Simulate first to check for errors (as in useTransactionHandling)
-      console.log('🧪 Simulating split payment transaction...');
-      const { request } = await simulateContract(config, {
-        address: paymentData.contractAddress,
-        abi: abi,
-        functionName: 'splitPayment',
-        args: [paymentDetails],
-        account: address
+      addDebugLog('debug', '🔍 Split payment details prepared', {
+        token: paymentDetails.token,
+        amount: paymentDetails.amount.toString(),
+        paymentId: paymentDetails.paymentId,
+        recipient1: paymentDetails.recipient1,
+        recipient2: paymentDetails.recipient2,
+        recipient3: paymentDetails.recipient3,
+        recipient1Percentage: paymentDetails.recipient1Percentage.toString(),
+        recipient2Percentage: paymentDetails.recipient2Percentage.toString(),
+        recipient3Percentage: paymentDetails.recipient3Percentage.toString(),
+        contractAddress: paymentData.contractAddress
       });
 
-      console.log('✅ Simulation successful, executing transaction...');
+      // Simulate first to check for errors (as in useTransactionHandling)
+      addDebugLog('info', '🧪 Simulating split payment transaction...');
+
+      let request;
+      try {
+        const simulationResult = await simulateContract(config, {
+          address: paymentData.contractAddress,
+          abi: abi,
+          functionName: 'splitPayment',
+          args: [paymentDetails],
+          account: address
+        });
+        request = simulationResult.request;
+
+        addDebugLog('success', '✅ Simulation successful', {
+          functionName: 'splitPayment',
+          contractAddress: paymentData.contractAddress,
+          from: address
+        });
+      } catch (simError) {
+        addDebugLog('error', '❌ Simulation failed', {
+          error: simError.message,
+          cause: simError.cause,
+          details: simError.details,
+          contractAddress: paymentData.contractAddress,
+          functionName: 'splitPayment',
+          args: paymentDetails
+        });
+        throw new Error(`Transaction simulation failed: ${simError.message}`);
+      }
 
       // Execute the split payment transaction
+      addDebugLog('info', '📝 Executing transaction...');
       const splitHash = await writeContract(config, request);
       setTransactionHash(splitHash);
-      console.log('✅ Split payment transaction sent:', splitHash);
+      addDebugLog('success', '✅ Split payment transaction sent', {
+        transactionHash: splitHash
+      });
 
       setTransactionStep('processing');
 
@@ -433,7 +560,14 @@ const EnhancedMobilePaymentFlow = () => {
       setCurrentStep('success');
 
     } catch (err) {
-      console.error('❌ Enhanced payment execution failed:', err);
+      addDebugLog('error', '❌ Enhanced payment execution failed', {
+        error: err.message,
+        code: err.code,
+        stack: err.stack,
+        cause: err.cause,
+        details: err.details,
+        fullError: err
+      });
 
       let errorMessage = err.message;
       if (err.message?.includes('User rejected') || err.code === 4001) {
@@ -442,6 +576,17 @@ const EnhancedMobilePaymentFlow = () => {
         errorMessage = 'Insufficient funds for gas fees';
       } else if (err.message?.includes('simulation failed')) {
         errorMessage = 'Transaction would fail. Please check your balance and try again.';
+      } else if (err.message?.includes('fetch')) {
+        errorMessage = 'Network error: Failed to communicate with backend. Please check your connection.';
+        addDebugLog('error', '🌐 Network/Fetch error detected', {
+          possibleCauses: [
+            'CORS issue with backend API',
+            'Backend server is down',
+            'Network connectivity issue',
+            'API endpoint not found',
+            'Authentication failed'
+          ]
+        });
       }
 
       setError(errorMessage);
@@ -638,28 +783,126 @@ const EnhancedMobilePaymentFlow = () => {
 
   // Main render
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-2xl shadow-xl max-w-md w-full overflow-hidden">
-        {/* Enhanced header */}
-        <div className="bg-gradient-to-r from-purple-600 to-blue-600 text-white p-6 text-center">
-          <h1 className="text-2xl font-bold">Coinley Pay</h1>
-          <p className="text-purple-100 text-sm mt-1">Enhanced Mobile Payment</p>
-        </div>
+    <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 p-4">
+      <div className="max-w-6xl mx-auto">
+        <div className="flex flex-col lg:flex-row gap-4">
+          {/* Main Payment Card */}
+          <div className="lg:w-1/2">
+            <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
+              {/* Enhanced header */}
+              <div className="bg-gradient-to-r from-purple-600 to-blue-600 text-white p-6 text-center">
+                <h1 className="text-2xl font-bold">Coinley Pay</h1>
+                <p className="text-purple-100 text-sm mt-1">Enhanced Mobile Payment</p>
+              </div>
 
-        {/* Content */}
-        <div className="min-h-[400px] flex flex-col justify-center">
-          {currentStep === 'loading' && renderLoading()}
-          {currentStep === 'connection' && renderConnection()}
-          {currentStep === 'confirmation' && renderConfirmation()}
-          {currentStep === 'processing' && renderProcessing()}
-          {currentStep === 'success' && renderSuccess()}
-          {currentStep === 'error' && renderError()}
-        </div>
+              {/* Content */}
+              <div className="min-h-[400px] flex flex-col justify-center">
+                {currentStep === 'loading' && renderLoading()}
+                {currentStep === 'connection' && renderConnection()}
+                {currentStep === 'confirmation' && renderConfirmation()}
+                {currentStep === 'processing' && renderProcessing()}
+                {currentStep === 'success' && renderSuccess()}
+                {currentStep === 'error' && renderError()}
+              </div>
 
-        {/* Enhanced footer */}
-        <div className="text-center text-xs text-gray-500 p-4 border-t">
-          <p>Powered by <span className="text-purple-600 font-semibold">Coinley</span> - Secure Split Payments</p>
-          <p className="mt-1">Mobile-Optimized Experience</p>
+              {/* Enhanced footer */}
+              <div className="text-center text-xs text-gray-500 p-4 border-t">
+                <p>Powered by <span className="text-purple-600 font-semibold">Coinley</span> - Secure Split Payments</p>
+                <p className="mt-1">Mobile-Optimized Experience</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Debug Panel */}
+          <div className="lg:w-1/2">
+            <div className="bg-gray-900 rounded-2xl shadow-xl overflow-hidden">
+              <div className="bg-gray-800 p-4 flex items-center justify-between">
+                <h2 className="text-white font-bold">🔍 Debug Console</h2>
+                <button
+                  onClick={() => setShowDebugPanel(!showDebugPanel)}
+                  className="text-gray-400 hover:text-white text-sm"
+                >
+                  {showDebugPanel ? 'Hide' : 'Show'}
+                </button>
+              </div>
+
+              {showDebugPanel && (
+                <div className="p-4 max-h-[600px] overflow-y-auto">
+                  <div className="space-y-2">
+                    {debugLogs.length === 0 ? (
+                      <div className="text-gray-400 text-sm">No logs yet. Actions will appear here...</div>
+                    ) : (
+                      debugLogs.map(log => (
+                        <div key={log.id} className="border-b border-gray-700 pb-2">
+                          <div className="flex items-start gap-2">
+                            <span className={`text-xs px-2 py-1 rounded font-bold ${
+                              log.type === 'error' ? 'bg-red-600 text-white' :
+                              log.type === 'success' ? 'bg-green-600 text-white' :
+                              log.type === 'debug' ? 'bg-blue-600 text-white' :
+                              log.type === 'warning' ? 'bg-yellow-600 text-white' :
+                              'bg-gray-600 text-white'
+                            }`}>
+                              {log.type.toUpperCase()}
+                            </span>
+                            <span className="text-gray-400 text-xs">{log.timestamp}</span>
+                          </div>
+                          <div className="text-green-400 text-sm mt-1">{log.message}</div>
+                          {log.data && (
+                            <details className="mt-1">
+                              <summary className="cursor-pointer text-blue-400 text-xs hover:text-blue-300">
+                                View Details
+                              </summary>
+                              <pre className="mt-1 p-2 bg-gray-800 rounded text-xs text-gray-300 overflow-x-auto">
+                                {JSON.stringify(log.data, null, 2)}
+                              </pre>
+                            </details>
+                          )}
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  {debugLogs.length > 0 && (
+                    <button
+                      onClick={() => setDebugLogs([])}
+                      className="mt-4 px-3 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
+                    >
+                      Clear Logs
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Quick Info Panel */}
+            <div className="bg-white rounded-2xl shadow-xl p-4 mt-4">
+              <h3 className="font-bold text-gray-800 mb-2">Payment Info</h3>
+              <div className="text-xs space-y-1">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Status:</span>
+                  <span className="font-semibold">{currentStep}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Wallet:</span>
+                  <span className="font-semibold">{address ? `${address.slice(0, 6)}...${address.slice(-4)}` : 'Not connected'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Network:</span>
+                  <span className="font-semibold">{chain?.name || 'Not connected'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Payment ID:</span>
+                  <span className="font-semibold">{paymentData?.paymentId ? `${paymentData.paymentId.slice(0, 8)}...` : 'N/A'}</span>
+                </div>
+                {transactionHash && (
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">TX Hash:</span>
+                    <span className="font-semibold">{`${transactionHash.slice(0, 8)}...`}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
