@@ -871,28 +871,13 @@ const EnhancedMobilePaymentFlow = () => {
       <button
         onClick={executePayment}
         disabled={processing}
-        className="w-full bg-green-600 text-white py-4 px-6 rounded-xl font-semibold hover:bg-green-700 disabled:opacity-50 transition-colors mb-3"
+        className="w-full bg-green-600 text-white py-4 px-6 rounded-xl font-semibold hover:bg-green-700 disabled:opacity-50 transition-colors"
       >
         {processing ? `Processing ${transactionStep}...` : 'Confirm Payment'}
       </button>
 
-      {/* Alternative: Already paid button */}
-      {walletEnv.isMobile && (
-        <button
-          onClick={() => {
-            addDebugLog('info', '👤 User indicated payment already completed');
-            setCurrentStep('awaitingVerification');
-          }}
-          className="w-full bg-blue-50 text-blue-700 py-3 px-6 rounded-xl font-medium hover:bg-blue-100 transition-colors border border-blue-200"
-        >
-          I've Already Paid - Verify Now
-        </button>
-      )}
-
       <p className="text-xs text-gray-500 text-center mt-4">
-        {walletEnv.isMobile
-          ? 'Pay in-app or click below if you already completed payment in your wallet.'
-          : 'This will execute a split payment transaction. You may need to approve multiple transactions.'}
+        This will execute a split payment transaction. You may need to approve multiple transactions.
       </p>
     </div>
   );

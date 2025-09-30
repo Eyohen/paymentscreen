@@ -30,12 +30,36 @@ export const config = createConfig({
     injected(), // Generic fallback and Coinbase support
   ],
   transports: {
-    [mainnet.id]: http(),
-    [bsc.id]: http(),
-    [polygon.id]: http(),
-    [arbitrum.id]: http(),
-    [optimism.id]: http(),
-    [avalanche.id]: http(),
+    [mainnet.id]: http('https://eth.llamarpc.com', {
+      timeout: 30_000, // 30 second timeout
+      retryCount: 3,
+      retryDelay: 1000
+    }),
+    [bsc.id]: http('https://bsc-dataseed1.binance.org', {
+      timeout: 30_000,
+      retryCount: 3,
+      retryDelay: 1000
+    }),
+    [polygon.id]: http('https://polygon-rpc.com', {
+      timeout: 30_000,
+      retryCount: 3,
+      retryDelay: 1000
+    }),
+    [arbitrum.id]: http('https://arb1.arbitrum.io/rpc', {
+      timeout: 30_000,
+      retryCount: 3,
+      retryDelay: 1000
+    }),
+    [optimism.id]: http('https://mainnet.optimism.io', {
+      timeout: 30_000,
+      retryCount: 3,
+      retryDelay: 1000
+    }),
+    [avalanche.id]: http('https://api.avax.network/ext/bc/C/rpc', {
+      timeout: 30_000,
+      retryCount: 3,
+      retryDelay: 1000
+    }),
   },
 });
 
