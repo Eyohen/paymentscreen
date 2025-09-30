@@ -235,6 +235,67 @@ const createApiClient = () => {
         console.error('❌ Failed to notify backend:', error);
         throw error;
       }
+    },
+
+    async checkPaymentStatus(paymentId) {
+      const endpoint = `${apiUrl}/api/payments/status/${paymentId}`;
+
+      try {
+        const headers = {
+          'Content-Type': 'application/json'
+        };
+
+        if (apiKey && apiSecret) {
+          headers['x-api-key'] = apiKey;
+          headers['x-api-secret'] = apiSecret;
+        }
+
+        const response = await fetch(endpoint, {
+          method: 'GET',
+          headers,
+          mode: 'cors'
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        return await response.json();
+      } catch (error) {
+        console.error('❌ Failed to check payment status:', error);
+        throw error;
+      }
+    },
+
+    async verifyQRPayment(paymentId) {
+      const endpoint = `${apiUrl}/api/payments/verify-qr`;
+
+      try {
+        const headers = {
+          'Content-Type': 'application/json'
+        };
+
+        if (apiKey && apiSecret) {
+          headers['x-api-key'] = apiKey;
+          headers['x-api-secret'] = apiSecret;
+        }
+
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({ paymentId }),
+          mode: 'cors'
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        return await response.json();
+      } catch (error) {
+        console.error('❌ Failed to verify payment:', error);
+        throw error;
+      }
     }
   };
 };
@@ -253,6 +314,7 @@ const EnhancedMobilePaymentFlow = () => {
   const [connectionAttempts, setConnectionAttempts] = useState(0);
   const [debugLogs, setDebugLogs] = useState([]);
   const [showDebugPanel, setShowDebugPanel] = useState(true); // Show debug by default
+  const [verifying, setVerifying] = useState(false); // For manual verification
 
   // Wagmi hooks
   const { address, isConnected, chain } = useAccount();
@@ -688,6 +750,53 @@ const EnhancedMobilePaymentFlow = () => {
     return networks[parseInt(chainId)] || 'ethereum';
   };
 
+  // Manual payment verification (for mobile deep-link flow)
+  const verifyPayment = async () => {
+    setVerifying(true);
+    addDebugLog('info', '🔍 Manually verifying payment...');
+
+    try {
+      // First check payment status
+      const statusResponse = await api.checkPaymentStatus(paymentData.paymentId);
+
+      addDebugLog('debug', '📊 Payment status check', {
+        status: statusResponse.payment?.status,
+        paymentId: paymentData.paymentId
+      });
+
+      if (statusResponse.payment?.status === 'completed') {
+        // Payment already completed
+        addDebugLog('success', '✅ Payment already confirmed in database');
+        setTransactionHash(statusResponse.payment.transactionHash || '');
+        setCurrentStep('success');
+        return;
+      }
+
+      // If not completed, try blockchain verification
+      addDebugLog('info', '🔗 Checking blockchain for payment...');
+      const verificationResponse = await api.verifyQRPayment(paymentData.paymentId);
+
+      if (verificationResponse.success && verificationResponse.verified) {
+        addDebugLog('success', '✅ Payment verified on blockchain!', {
+          transactionHash: verificationResponse.onChainData?.transactionHash
+        });
+        setTransactionHash(verificationResponse.onChainData?.transactionHash || '');
+        setCurrentStep('success');
+      } else {
+        // Payment not found yet
+        const message = verificationResponse.message || 'Payment not found on blockchain yet';
+        addDebugLog('warning', '⏳ ' + message);
+        setError(message + '. Please wait a moment and try again, or ensure you completed the transaction in your wallet.');
+      }
+    } catch (err) {
+      console.error('Verification error:', err);
+      addDebugLog('error', '❌ Verification failed', { error: err.message });
+      setError('Failed to verify payment: ' + err.message);
+    } finally {
+      setVerifying(false);
+    }
+  };
+
   // Render functions for different steps (enhanced with better UX)
   const renderLoading = () => (
     <div className="text-center p-8">
@@ -762,13 +871,28 @@ const EnhancedMobilePaymentFlow = () => {
       <button
         onClick={executePayment}
         disabled={processing}
-        className="w-full bg-green-600 text-white py-4 px-6 rounded-xl font-semibold hover:bg-green-700 disabled:opacity-50 transition-colors"
+        className="w-full bg-green-600 text-white py-4 px-6 rounded-xl font-semibold hover:bg-green-700 disabled:opacity-50 transition-colors mb-3"
       >
         {processing ? `Processing ${transactionStep}...` : 'Confirm Payment'}
       </button>
 
+      {/* Alternative: Already paid button */}
+      {walletEnv.isMobile && (
+        <button
+          onClick={() => {
+            addDebugLog('info', '👤 User indicated payment already completed');
+            setCurrentStep('awaitingVerification');
+          }}
+          className="w-full bg-blue-50 text-blue-700 py-3 px-6 rounded-xl font-medium hover:bg-blue-100 transition-colors border border-blue-200"
+        >
+          I've Already Paid - Verify Now
+        </button>
+      )}
+
       <p className="text-xs text-gray-500 text-center mt-4">
-        This will execute a split payment transaction. You may need to approve multiple transactions.
+        {walletEnv.isMobile
+          ? 'Pay in-app or click below if you already completed payment in your wallet.'
+          : 'This will execute a split payment transaction. You may need to approve multiple transactions.'}
       </p>
     </div>
   );
@@ -789,6 +913,68 @@ const EnhancedMobilePaymentFlow = () => {
           </p>
         </div>
       )}
+    </div>
+  );
+
+  const renderAwaitingVerification = () => (
+    <div className="p-6">
+      <div className="text-center mb-6">
+        <div className="w-16 h-16 mx-auto bg-blue-100 rounded-full flex items-center justify-center mb-4">
+          <svg className="w-8 h-8 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+        </div>
+        <h2 className="text-xl font-bold text-gray-800 mb-2">Complete Payment in Wallet</h2>
+        <p className="text-gray-600 mb-4">
+          After completing the transaction in your wallet app, return here and click the button below to verify your payment.
+        </p>
+      </div>
+
+      {/* Payment Details */}
+      <div className="bg-gray-50 rounded-xl p-4 mb-6">
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-gray-600 text-sm">Amount:</span>
+          <span className="font-semibold">{paymentData.amount} {paymentData.token}</span>
+        </div>
+        <div className="flex justify-between items-center mb-2">
+          <span className="text-gray-600 text-sm">Merchant:</span>
+          <span className="font-semibold text-sm">{paymentData.merchant}</span>
+        </div>
+        <div className="flex justify-between items-center">
+          <span className="text-gray-600 text-sm">Payment ID:</span>
+          <span className="font-mono text-xs">{paymentData.paymentId.slice(0, 12)}...</span>
+        </div>
+      </div>
+
+      {/* Error Message */}
+      {error && (
+        <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4 mb-4">
+          <p className="text-sm text-yellow-700">{error}</p>
+        </div>
+      )}
+
+      {/* Verification Button */}
+      <button
+        onClick={verifyPayment}
+        disabled={verifying}
+        className="w-full bg-blue-600 text-white py-4 px-6 rounded-xl font-semibold hover:bg-blue-700 disabled:opacity-50 transition-colors mb-3"
+      >
+        {verifying ? (
+          <span className="flex items-center justify-center">
+            <svg className="animate-spin h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Verifying Payment...
+          </span>
+        ) : (
+          'I Have Paid - Verify Now'
+        )}
+      </button>
+
+      <p className="text-xs text-gray-500 text-center">
+        This will check the blockchain to confirm your payment was received.
+      </p>
     </div>
   );
 
@@ -878,6 +1064,7 @@ const EnhancedMobilePaymentFlow = () => {
                 {currentStep === 'connection' && renderConnection()}
                 {currentStep === 'confirmation' && renderConfirmation()}
                 {currentStep === 'processing' && renderProcessing()}
+                {currentStep === 'awaitingVerification' && renderAwaitingVerification()}
                 {currentStep === 'success' && renderSuccess()}
                 {currentStep === 'error' && renderError()}
               </div>
