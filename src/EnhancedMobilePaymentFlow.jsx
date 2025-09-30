@@ -625,7 +625,8 @@ const EnhancedMobilePaymentFlow = () => {
       const paymentDetails = {
         token: paymentData.tokenContract || paymentData.tokenAddress,
         amount: amountInUnits,
-        paymentId: paymentData.paymentId || paymentData.splitterPaymentId,
+        // CRITICAL: Use splitterPaymentId first for blockchain verification
+        paymentId: paymentData.splitterPaymentId || paymentData.paymentId,
         recipient1: paymentData.recipient1 || paymentData.merchantWallet || '0x0000000000000000000000000000000000000000',
         recipient2: paymentData.recipient2 || paymentData.coinleyWallet || '0x0000000000000000000000000000000000000000',
         recipient3: paymentData.recipient3 || '0x0000000000000000000000000000000000000000',
