@@ -334,11 +334,10 @@ const createApiClient = () => {
 };
 
 const EnhancedMobilePaymentFlow = () => {
-  // Wallet environment detection
-  const walletEnv = detectWalletEnvironment();
-
   // State management (aligned with coinley-test pattern)
-  const [currentStep, setCurrentStep] = useState('loading');
+  const [currentStep, setCurrentStep] = useState('waitingForProvider'); // ⭐ Start by waiting for provider
+  const [providerReady, setProviderReady] = useState(false);
+  const [walletEnv, setWalletEnv] = useState(null);
   const [paymentData, setPaymentData] = useState(null);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
@@ -373,10 +372,57 @@ const EnhancedMobilePaymentFlow = () => {
     // Also log to console for developers
     console.log(`[${type.toUpperCase()}] [${timestamp}] ${message}`, data || '');
   };
-  
 
-  // Initialize payment data on component mount
+  // ⭐ PROVIDER DETECTION: Wait for wallet provider to be injected
   useEffect(() => {
+    let pollCount = 0;
+    const maxPolls = 50; // 10 seconds (50 polls * 200ms)
+
+    console.log('🔍 Starting provider detection polling...');
+
+    const checkProvider = () => {
+      pollCount++;
+
+      if (window.ethereum) {
+        // Provider found!
+        console.log(`✅ Provider detected after ${pollCount * 200}ms`);
+        const env = detectWalletEnvironment();
+        setWalletEnv(env);
+        setProviderReady(true);
+        setCurrentStep('loading'); // Move to loading state
+        return true;
+      }
+
+      if (pollCount >= maxPolls) {
+        // Timeout - provider not found
+        console.log('⏱️ Provider detection timeout after 10 seconds');
+        setError('Unable to detect wallet provider. Please refresh the page or ensure you opened this link in a wallet browser.');
+        setCurrentStep('providerTimeout');
+        return true;
+      }
+
+      // Continue polling
+      console.log(`⏳ Polling for provider... attempt ${pollCount}/${maxPolls}`);
+      return false;
+    };
+
+    // Check immediately first
+    if (!checkProvider()) {
+      // Start polling every 200ms
+      const interval = setInterval(() => {
+        if (checkProvider()) {
+          clearInterval(interval);
+        }
+      }, 200);
+
+      return () => clearInterval(interval);
+    }
+  }, []);
+
+  // Initialize payment data on component mount (only after provider is ready)
+  useEffect(() => {
+    if (!providerReady || !walletEnv) return; // Wait for provider
+
     const initializePayment = async () => {
       try {
         addDebugLog('info', '🔄 Initializing enhanced mobile payment flow...');
@@ -442,13 +488,18 @@ const EnhancedMobilePaymentFlow = () => {
     };
 
     initializePayment();
-  }, []);
+  }, [providerReady, walletEnv]); // Only run after provider is detected
 
   // Simplified wallet connection for mobile (based on research findings)
   const connectWallet = useCallback(async () => {
     if (isConnected) {
       console.log('✅ Wallet already connected');
       return true;
+    }
+
+    if (!walletEnv) {
+      console.log('⚠️ Wallet environment not ready yet');
+      return false;
     }
 
     try {
@@ -514,11 +565,11 @@ const EnhancedMobilePaymentFlow = () => {
 
   // Auto-connect for in-app browsers (aligned with best practices)
   useEffect(() => {
-    if (currentStep === 'connection' && walletEnv.isInAppBrowser && !isConnected) {
+    if (currentStep === 'connection' && walletEnv?.isInAppBrowser && !isConnected) {
       console.log('🚀 Auto-connecting for in-app browser...');
       setTimeout(() => connectWallet(), 1000);
     }
-  }, [currentStep, walletEnv.isInAppBrowser, isConnected, connectWallet]);
+  }, [currentStep, walletEnv, isConnected, connectWallet]);
 
   // Enhanced payment execution (aligned with useTransactionHandling.js)
   const executePayment = async () => {
@@ -863,6 +914,36 @@ const EnhancedMobilePaymentFlow = () => {
   };
 
   // Render functions for different steps (enhanced with better UX)
+  const renderWaitingForProvider = () => (
+    <div className="text-center p-8">
+      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+      <h2 className="text-xl font-bold text-gray-800 mb-2">Connecting to Wallet...</h2>
+      <p className="text-gray-600 mb-2">Waiting for wallet browser to initialize</p>
+      <p className="text-xs text-gray-500">This usually takes 1-3 seconds</p>
+    </div>
+  );
+
+  const renderProviderTimeout = () => (
+    <div className="text-center p-8">
+      <div className="w-16 h-16 mx-auto bg-yellow-500 rounded-full flex items-center justify-center mb-4">
+        <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+        </svg>
+      </div>
+      <h2 className="text-xl font-bold text-gray-800 mb-2">Unable to Connect</h2>
+      <p className="text-gray-600 mb-6">{error}</p>
+      <button
+        onClick={() => window.location.reload()}
+        className="w-full bg-blue-600 text-white py-3 px-6 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
+      >
+        Refresh Page
+      </button>
+      <p className="text-xs text-gray-500 mt-4">
+        Make sure you opened this link in a wallet browser (MetaMask, Trust Wallet, or Coinbase Wallet)
+      </p>
+    </div>
+  );
+
   const renderLoading = () => (
     <div className="text-center p-8">
       <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
@@ -880,13 +961,13 @@ const EnhancedMobilePaymentFlow = () => {
       </div>
       <h2 className="text-xl font-bold text-gray-800 mb-2">Connect Your Wallet</h2>
       <p className="text-gray-600 mb-6">
-        {walletEnv.isInAppBrowser
-          ? `Connecting to ${walletEnv.walletType}...`
+        {walletEnv?.isInAppBrowser
+          ? `Connecting to ${walletEnv?.walletType}...`
           : 'Please connect your wallet to continue with the payment'
         }
       </p>
 
-      {!walletEnv.isInAppBrowser && (
+      {!walletEnv?.isInAppBrowser && (
         <button
           onClick={connectWallet}
           disabled={isPending}
@@ -1110,6 +1191,8 @@ const EnhancedMobilePaymentFlow = () => {
 
               {/* Content */}
               <div className="min-h-[400px] flex flex-col justify-center">
+                {currentStep === 'waitingForProvider' && renderWaitingForProvider()}
+                {currentStep === 'providerTimeout' && renderProviderTimeout()}
                 {currentStep === 'loading' && renderLoading()}
                 {currentStep === 'connection' && renderConnection()}
                 {currentStep === 'confirmation' && renderConfirmation()}
