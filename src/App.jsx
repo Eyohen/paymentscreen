@@ -12,16 +12,23 @@ const queryClient = new QueryClient();
 const detectPaymentMode = () => {
   const params = new URLSearchParams(window.location.search);
   const isMobileParam = params.get('isMobile') === 'true';
-  const hasEnhancedParams = !!(params.get('paymentId') && params.get('contractAddress') && params.get('tokenContract'));
+  const paymentId = params.get('paymentId');
+  const contractAddress = params.get('contractAddress');
+  const tokenContract = params.get('tokenContract');
+
+  // ⭐ OPTIMIZED: Only require paymentId - EnhancedMobilePaymentFlow will fetch missing data from backend
+  const hasValidParams = !!paymentId;
+  const hasFullParams = !!(paymentId && contractAddress && tokenContract);
   const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 
   return {
-    useEnhancedFlow: isMobileParam || (isMobileDevice && hasEnhancedParams),
-    hasValidParams: hasEnhancedParams,
+    useEnhancedFlow: isMobileParam || (isMobileDevice && hasValidParams),
+    hasValidParams,
+    hasFullParams,
     isMobileDevice,
-    paymentId: params.get('paymentId'),
-    contractAddress: params.get('contractAddress'),
-    tokenContract: params.get('tokenContract')
+    paymentId,
+    contractAddress,
+    tokenContract
   };
 };
 
