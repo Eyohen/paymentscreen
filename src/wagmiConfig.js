@@ -30,31 +30,37 @@ export const config = createConfig({
     injected(), // Generic fallback and Coinbase support
   ],
   transports: {
-    [mainnet.id]: http('https://eth.llamarpc.com', {
-      timeout: 30_000, // 30 second timeout
-      retryCount: 3,
-      retryDelay: 1000
-    }),
-    [bsc.id]: http('https://bsc-dataseed1.binance.org', {
+    // ⭐ Ethereum Mainnet - Cloudflare (most reliable public RPC)
+    [mainnet.id]: http('https://cloudflare-eth.com', {
       timeout: 30_000,
       retryCount: 3,
       retryDelay: 1000
     }),
+    // ⭐ BSC - Official Binance RPC (primary official endpoint)
+    [bsc.id]: http('https://bsc-dataseed.binance.org', {
+      timeout: 30_000,
+      retryCount: 3,
+      retryDelay: 1000
+    }),
+    // ⭐ Polygon - Polygon official RPC (most reliable)
     [polygon.id]: http('https://polygon-rpc.com', {
       timeout: 30_000,
       retryCount: 3,
       retryDelay: 1000
     }),
+    // ⭐ Arbitrum - Official Arbitrum One RPC
     [arbitrum.id]: http('https://arb1.arbitrum.io/rpc', {
       timeout: 30_000,
       retryCount: 3,
       retryDelay: 1000
     }),
+    // ⭐ Optimism - Official Optimism Mainnet RPC
     [optimism.id]: http('https://mainnet.optimism.io', {
       timeout: 30_000,
       retryCount: 3,
       retryDelay: 1000
     }),
+    // ⭐ Avalanche - Official Avalanche C-Chain RPC
     [avalanche.id]: http('https://api.avax.network/ext/bc/C/rpc', {
       timeout: 30_000,
       retryCount: 3,
