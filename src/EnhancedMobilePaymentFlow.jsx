@@ -195,6 +195,45 @@ const createApiClient = () => {
       }
     },
 
+    async getPaymentDetails(paymentId) {
+      const endpoint = `${apiUrl}/api/payments/${paymentId}`;
+      console.log('🔍 Fetching payment details for:', paymentId);
+
+      try {
+        const headers = {
+          'Content-Type': 'application/json'
+        };
+
+        if (apiKey && apiSecret) {
+          headers['x-api-key'] = apiKey;
+          headers['x-api-secret'] = apiSecret;
+        }
+
+        const response = await fetch(endpoint, {
+          method: 'GET',
+          headers,
+          mode: 'cors'
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`Failed to fetch payment: ${response.status} ${errorText}`);
+        }
+
+        const result = await response.json();
+        console.log('✅ Payment details fetched:', result);
+
+        if (!result.success || !result.payment) {
+          throw new Error('Payment not found');
+        }
+
+        return result.payment;
+      } catch (error) {
+        console.error('❌ Error fetching payment details:', error);
+        throw error;
+      }
+    },
+
     async notifyBackend(paymentId, transactionHash, networkName, senderAddress) {
       if (!paymentId) {
         console.warn('⚠️ No payment ID provided for backend notification');
@@ -349,23 +388,53 @@ const EnhancedMobilePaymentFlow = () => {
         addDebugLog('info', '🔍 Wallet environment detected', walletEnv);
 
         const urlParams = getValidatedUrlParams();
-        setPaymentData(urlParams);
 
-        addDebugLog('success', '✅ Payment data validated', {
-          paymentId: urlParams.paymentId,
-          chainId: urlParams.chainId,
-          amount: urlParams.amount,
-          walletDetected: walletEnv.walletType,
-          contractAddress: urlParams.contractAddress,
-          tokenContract: urlParams.tokenContract,
-          recipient1: urlParams.recipient1,
-          recipient2: urlParams.recipient2,
-          recipient1Percentage: urlParams.recipient1Percentage,
-          recipient2Percentage: urlParams.recipient2Percentage,
-          tokenDecimals: urlParams.tokenDecimals,
-          amountInWei: urlParams.amountInWei
-        });
+        // ⭐ OPTIMIZED: Check if we have minimal params (QR code optimization)
+        const hasMinimalParams = urlParams.paymentId &&
+                                !urlParams.contractAddress &&
+                                !urlParams.tokenContract;
 
+        if (hasMinimalParams) {
+          addDebugLog('info', '🔄 Minimal params detected - fetching full payment details from backend...');
+
+          try {
+            const api = createApiClient();
+            const fetchedPayment = await api.getPaymentDetails(urlParams.paymentId);
+
+            // Merge fetched data with URL params
+            const enrichedParams = {
+              ...urlParams,
+              contractAddress: fetchedPayment.splitterContractAddress,
+              tokenContract: fetchedPayment.Token?.contractAddress,
+              chainId: fetchedPayment.Network?.chainId || fetchedPayment.chainId,
+              amount: fetchedPayment.amount,
+              token: fetchedPayment.Token?.symbol,
+              merchant: fetchedPayment.Merchant?.businessName,
+              recipient1: fetchedPayment.merchantWallet,
+              recipient2: fetchedPayment.coinleyWallet,
+              recipient1Percentage: (fetchedPayment.merchantPercentage * 100).toString(),
+              recipient2Percentage: (fetchedPayment.coinleyPercentage * 100).toString(),
+              tokenDecimals: fetchedPayment.Token?.decimals?.toString(),
+              network: fetchedPayment.Network?.name
+            };
+
+            addDebugLog('success', '✅ Payment details enriched from backend', enrichedParams);
+            setPaymentData(enrichedParams);
+          } catch (fetchError) {
+            addDebugLog('error', '❌ Failed to fetch payment details from backend', {
+              error: fetchError.message,
+              paymentId: urlParams.paymentId
+            });
+            // Fallback to URL params if fetch fails
+            setPaymentData(urlParams);
+          }
+        } else {
+          // Full params provided in URL (legacy/fallback mode)
+          addDebugLog('info', '📋 Full params provided in URL');
+          setPaymentData(urlParams);
+        }
+
+        addDebugLog('success', '✅ Payment data initialized');
         setCurrentStep('connection');
       } catch (err) {
         addDebugLog('error', '❌ Failed to initialize payment', {
