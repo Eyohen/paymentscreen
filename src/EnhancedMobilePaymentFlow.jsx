@@ -379,6 +379,7 @@ const EnhancedMobilePaymentFlow = () => {
     // Also log to console for developers
     console.log(`[${type.toUpperCase()}] [${timestamp}] ${message}`, data || '');
   };
+  
 
   // Initialize payment data on component mount
   useEffect(() => {
