@@ -196,22 +196,16 @@ const createApiClient = () => {
     },
 
     async getPaymentDetails(paymentId) {
-      const endpoint = `${apiUrl}/api/payments/${paymentId}`;
-      console.log('🔍 Fetching payment details for:', paymentId);
+      // ⭐ Use PUBLIC endpoint - no authentication required (secure by design)
+      const endpoint = `${apiUrl}/api/payments/public/${paymentId}`;
+      console.log('🔓 Fetching public payment details for:', paymentId);
 
       try {
-        const headers = {
-          'Content-Type': 'application/json'
-        };
-
-        if (apiKey && apiSecret) {
-          headers['x-api-key'] = apiKey;
-          headers['x-api-secret'] = apiSecret;
-        }
-
         const response = await fetch(endpoint, {
           method: 'GET',
-          headers,
+          headers: {
+            'Content-Type': 'application/json'
+          },
           mode: 'cors'
         });
 
@@ -221,7 +215,7 @@ const createApiClient = () => {
         }
 
         const result = await response.json();
-        console.log('✅ Payment details fetched:', result);
+        console.log('✅ Public payment details fetched:', result);
 
         if (!result.success || !result.payment) {
           throw new Error('Payment not found');
