@@ -1,6 +1,6 @@
 import { createConfig } from 'wagmi';
 import { http, fallback } from 'viem';
-import { mainnet, bsc, polygon, arbitrum, optimism, avalanche } from 'wagmi/chains';
+import { mainnet, bsc, polygon, arbitrum, optimism, avalanche, celo } from 'wagmi/chains';
 import { injected } from 'wagmi/connectors';
 
 // Trust Wallet connector
@@ -25,7 +25,7 @@ const metaMask = () => injected({
 // ✅ IMPROVED: Multiple fallback RPC endpoints for reliability
 // Create wagmi config with mobile-focused wallets only
 export const config = createConfig({
-  chains: [mainnet, bsc, polygon, arbitrum, optimism, avalanche],
+  chains: [mainnet, bsc, polygon, arbitrum, optimism, avalanche, celo],
   connectors: [
     trustWallet(),
     metaMask(),
@@ -130,6 +130,21 @@ export const config = createConfig({
         retryCount: 2,
       }),
     ]),
+    // ⭐ Celo - Multiple fallback RPCs
+    [celo.id]: fallback([
+      http('https://forno.celo.org', {
+        timeout: 30_000,
+        retryCount: 2,
+      }),
+      http('https://rpc.ankr.com/celo', {
+        timeout: 30_000,
+        retryCount: 2,
+      }),
+      http('https://celo.drpc.org', {
+        timeout: 30_000,
+        retryCount: 2,
+      }),
+    ]),
   },
 });
 
@@ -141,6 +156,7 @@ export const networkToChainId = {
   'Arbitrum': arbitrum.id,
   'Optimism': optimism.id,
   'Avalanche': avalanche.id,
+  'Celo': celo.id,
 };
 
 // Get chain object by network name
@@ -153,6 +169,7 @@ export const getChainByNetwork = (networkName) => {
     case arbitrum.id: return arbitrum;
     case optimism.id: return optimism;
     case avalanche.id: return avalanche;
+    case celo.id: return celo;
     default: return mainnet;
   }
 };
