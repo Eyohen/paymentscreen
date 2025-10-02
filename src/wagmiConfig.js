@@ -1,4 +1,5 @@
-import { createConfig, http, fallback } from 'wagmi';
+import { createConfig } from 'wagmi';
+import { http, fallback } from 'viem';
 import { mainnet, bsc, polygon, arbitrum, optimism, avalanche } from 'wagmi/chains';
 import { injected } from 'wagmi/connectors';
 
