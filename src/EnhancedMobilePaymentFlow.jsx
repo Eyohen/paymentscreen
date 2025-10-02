@@ -685,12 +685,34 @@ const EnhancedMobilePaymentFlow = () => {
       const targetChainId = parseInt(paymentData.chainId);
       if (chain?.id !== targetChainId) {
         console.log(`🔗 Switching to chain ${targetChainId}...`);
-        switchChain({ chainId: targetChainId }).then(() => {
-          setCurrentStep('confirmation');
-        }).catch(err => {
-          console.error('❌ Chain switch failed:', err);
-          setError(`Please switch to the correct network in your wallet`);
-        });
+
+        // ✅ MOBILE FIX: Check if switchChain is available and returns a promise
+        if (switchChain) {
+          try {
+            const switchPromise = switchChain({ chainId: targetChainId });
+
+            // Check if result is a promise before calling .then()
+            if (switchPromise && typeof switchPromise.then === 'function') {
+              switchPromise.then(() => {
+                setCurrentStep('confirmation');
+              }).catch(err => {
+                console.error('❌ Chain switch failed:', err);
+                setError(`Please switch to the correct network in your wallet`);
+              });
+            } else {
+              // switchChain didn't return a promise, proceed anyway
+              console.warn('⚠️ switchChain did not return a promise, proceeding to confirmation');
+              setCurrentStep('confirmation');
+            }
+          } catch (err) {
+            console.error('❌ Chain switch error:', err);
+            setError(`Please switch to the correct network in your wallet`);
+          }
+        } else {
+          // switchChain not available, ask user to switch manually
+          console.warn('⚠️ switchChain not available, user must switch network manually');
+          setError(`Please switch to ${paymentData.network} network in your wallet`);
+        }
       } else {
         setCurrentStep('confirmation');
       }
