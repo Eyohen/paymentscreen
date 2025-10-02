@@ -4,6 +4,13 @@ import { readContract, writeContract, simulateContract } from '@wagmi/core';
 import { parseUnits, erc20Abi } from 'viem';
 import { config } from './wagmiConfig';
 
+// ✅ CRITICAL: Add global BigInt serialization support to prevent JSON errors
+if (typeof BigInt.prototype.toJSON === 'undefined') {
+  BigInt.prototype.toJSON = function() {
+    return this.toString();
+  };
+}
+
 // Enhanced wallet environment detection (aligned with coinley-test research)
 // ✅ IMPROVED: More aggressive detection for MetaMask and Coinbase
 const detectWalletEnvironment = () => {
@@ -378,14 +385,30 @@ const EnhancedMobilePaymentFlow = () => {
   // API client
   const api = createApiClient();
 
-  // Debug logging function
+  // ✅ SAFE: Debug logging function with BigInt serialization
   const addDebugLog = (type, message, data = null) => {
     const timestamp = new Date().toLocaleTimeString();
+
+    // ✅ Convert BigInt to string to prevent serialization errors
+    const serializeSafeData = (obj) => {
+      if (obj === null || obj === undefined) return obj;
+      if (typeof obj === 'bigint') return obj.toString();
+      if (Array.isArray(obj)) return obj.map(serializeSafeData);
+      if (typeof obj === 'object') {
+        const safe = {};
+        for (const key in obj) {
+          safe[key] = serializeSafeData(obj[key]);
+        }
+        return safe;
+      }
+      return obj;
+    };
+
     const logEntry = {
       id: Date.now() + Math.random(),
       type,
       message,
-      data,
+      data: serializeSafeData(data),
       timestamp
     };
     setDebugLogs(prev => [...prev, logEntry].slice(-50)); // Keep last 50 logs
