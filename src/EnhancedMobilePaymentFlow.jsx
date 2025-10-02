@@ -12,30 +12,39 @@ if (typeof BigInt.prototype.toJSON === 'undefined') {
 }
 
 // Enhanced wallet environment detection (aligned with coinley-test research)
-// ✅ IMPROVED: More aggressive detection for MetaMask and Coinbase
+// ✅ IMPROVED: More aggressive detection for Trust Wallet, MetaMask and Coinbase
 const detectWalletEnvironment = () => {
   const userAgent = navigator.userAgent.toLowerCase();
   const ethereum = window.ethereum;
+  const trustwallet = window.trustwallet;
 
   // Check multiple provider properties (MetaMask/Coinbase can have different structures)
   const providers = window.ethereum?.providers || [];
   const hasMetaMask = !!(ethereum?.isMetaMask || providers.find(p => p.isMetaMask));
   const hasCoinbase = !!(ethereum?.isCoinbaseWallet || ethereum?.isCoinbaseBrowser || providers.find(p => p.isCoinbaseWallet));
-  const hasTrust = !!(ethereum?.isTrust || ethereum?.isTrustWallet);
+
+  // ✅ TRUST WALLET: Check window.trustwallet AND window.ethereum
+  const hasTrust = !!(
+    trustwallet ||
+    ethereum?.isTrust ||
+    ethereum?.isTrustWallet ||
+    userAgent.includes('trust')
+  );
 
   return {
     isMobile: /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
-    isInAppBrowser: !!(ethereum && (hasMetaMask || hasTrust || hasCoinbase)),
-    walletType: hasMetaMask ? 'metamask' :
-                hasTrust ? 'trust' :
+    isInAppBrowser: !!((ethereum || trustwallet) && (hasMetaMask || hasTrust || hasCoinbase)),
+    walletType: hasTrust ? 'trust' :
+                hasMetaMask ? 'metamask' :
                 hasCoinbase ? 'coinbase' :
                 userAgent.includes('trust') ? 'trust' :
                 userAgent.includes('metamask') ? 'metamask' :
                 userAgent.includes('coinbase') ? 'coinbase' : 'unknown',
-    hasEthereum: !!ethereum,
+    hasEthereum: !!(ethereum || trustwallet),
     hasMetaMask,
     hasCoinbase,
-    hasTrust
+    hasTrust,
+    hasTrustWallet: !!trustwallet
   };
 };
 
@@ -417,49 +426,96 @@ const EnhancedMobilePaymentFlow = () => {
     console.log(`[${type.toUpperCase()}] [${timestamp}] ${message}`, data || '');
   };
 
-  // ⭐ IMPROVED PROVIDER DETECTION: More aggressive for MetaMask & Coinbase
+  // ⭐ TRUST WALLET FIX: Listen for trustwallet#initialized event (Manifest V3)
+  const listenForTrustWalletInitialized = ({ timeout = 3000 } = {}) => {
+    return new Promise((resolve) => {
+      const handleInitialization = () => {
+        console.log('✅ Trust Wallet initialized event fired!');
+        const trustProvider = window.trustwallet;
+        resolve(trustProvider);
+      };
+
+      window.addEventListener('trustwallet#initialized', handleInitialization, { once: true });
+
+      setTimeout(() => {
+        window.removeEventListener('trustwallet#initialized', handleInitialization);
+        resolve(null);
+      }, timeout);
+    });
+  };
+
+  // ⭐ IMPROVED PROVIDER DETECTION: Handles Trust Wallet Manifest V3 + MetaMask & Coinbase
   useEffect(() => {
     let pollCount = 0;
-    const maxPolls = 100; // 20 seconds (100 polls * 200ms) - increased timeout
+    const maxPolls = 100; // 20 seconds (100 polls * 200ms)
     let pollInterval = null;
+    let trustWalletPromise = null;
 
     console.log('🔍 Starting IMPROVED provider detection...');
     console.log('🔍 User Agent:', navigator.userAgent);
     console.log('🔍 Initial window.ethereum:', !!window.ethereum);
+    console.log('🔍 Initial window.trustwallet:', !!window.trustwallet);
+
+    // ✅ TRUST WALLET SPECIFIC: Start listening for initialization event immediately
+    const isMobileTrustWallet = navigator.userAgent.toLowerCase().includes('trust');
+    if (isMobileTrustWallet) {
+      console.log('🔍 Trust Wallet detected in User Agent, listening for trustwallet#initialized event...');
+      trustWalletPromise = listenForTrustWalletInitialized({ timeout: 5000 });
+      trustWalletPromise.then(trustProvider => {
+        if (trustProvider) {
+          console.log('✅ Trust Wallet provider received from event!');
+          const env = detectWalletEnvironment();
+          console.log('✅ Wallet environment:', env);
+          setWalletEnv(env);
+          setProviderReady(true);
+          setCurrentStep('loading');
+          if (pollInterval) clearInterval(pollInterval);
+        }
+      });
+    }
 
     const checkProvider = () => {
       pollCount++;
 
-      // ✅ AGGRESSIVE CHECK: Multiple detection methods
+      // ✅ TRUST WALLET: Check window.trustwallet specifically
+      const hasTrustWallet = !!window.trustwallet;
       const hasWindowEthereum = !!window.ethereum;
       const hasEthereumProviders = !!(window.ethereum?.providers && window.ethereum.providers.length > 0);
       const hasMetaMaskProvider = !!(window.ethereum?.isMetaMask || window.ethereum?.providers?.find(p => p.isMetaMask));
       const hasCoinbaseProvider = !!(window.ethereum?.isCoinbaseWallet || window.ethereum?.isCoinbaseBrowser);
+      const hasTrustProvider = !!(window.ethereum?.isTrust || window.ethereum?.isTrustWallet);
 
       console.log(`⏳ Poll ${pollCount}/${maxPolls}:`, {
+        hasTrustWallet,
         hasWindowEthereum,
         hasEthereumProviders,
         hasMetaMaskProvider,
         hasCoinbaseProvider,
-        providerType: window.ethereum?.isMetaMask ? 'MetaMask' :
-                      window.ethereum?.isCoinbaseWallet ? 'Coinbase' :
-                      window.ethereum?.isTrust ? 'Trust' : 'Unknown'
+        hasTrustProvider,
+        providerType: window.ethereum?.isTrust || window.ethereum?.isTrustWallet ? 'Trust Wallet' :
+                      window.ethereum?.isMetaMask ? 'MetaMask' :
+                      window.ethereum?.isCoinbaseWallet ? 'Coinbase' : 'Unknown'
       });
 
-      if (hasWindowEthereum) {
-        // Provider found!
+      // ✅ Accept Trust Wallet OR any ethereum provider
+      if (hasTrustWallet || hasWindowEthereum) {
         console.log(`✅ Provider detected after ${pollCount * 200}ms (${(pollCount * 200 / 1000).toFixed(1)}s)`);
         const env = detectWalletEnvironment();
         console.log('✅ Wallet environment:', env);
         setWalletEnv(env);
         setProviderReady(true);
-        setCurrentStep('loading'); // Move to loading state
+        setCurrentStep('loading');
         return true;
       }
 
       if (pollCount >= maxPolls) {
         // Timeout - provider not found
         console.log('⏱️ Provider detection timeout after', maxPolls * 200 / 1000, 'seconds');
+        console.log('🔍 Final check:', {
+          'window.ethereum': !!window.ethereum,
+          'window.trustwallet': !!window.trustwallet,
+          'window.ethereum.isTrust': !!window.ethereum?.isTrust
+        });
         setError('Unable to detect wallet provider. Please refresh the page or ensure you opened this link in a wallet browser.');
         setCurrentStep('providerTimeout');
         return true;
@@ -473,7 +529,7 @@ const EnhancedMobilePaymentFlow = () => {
       return; // Found immediately
     }
 
-    // ✅ Start aggressive polling with shorter interval
+    // ✅ Start polling
     pollInterval = setInterval(() => {
       if (checkProvider()) {
         clearInterval(pollInterval);
