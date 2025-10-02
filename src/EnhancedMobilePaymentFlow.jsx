@@ -663,52 +663,116 @@ const EnhancedMobilePaymentFlow = () => {
         contract: paymentData.tokenContract
       });
 
-      // Step 1: Check token balance
+      // Step 1: Check token balance with retry logic
       setTransactionStep('approve');
       addDebugLog('info', '💰 Step 1: Checking token balance...');
 
-      const balance = await readContract(config, {
-        address: paymentData.tokenContract,
-        abi: erc20Abi,
-        functionName: 'balanceOf',
-        args: [address]
-      });
+      let balance = null;
+      let balanceCheckAttempts = 0;
+      const maxBalanceCheckAttempts = 3;
 
-      addDebugLog('success', '💰 Balance check complete', {
-        tokenContract: paymentData.tokenContract,
-        userAddress: address,
-        balance: balance.toString(),
-        required: amountInUnits.toString(),
-        hasEnough: balance >= amountInUnits,
-        difference: (balance - amountInUnits).toString()
-      });
+      // ✅ RETRY LOGIC: Try multiple times with exponential backoff
+      while (balanceCheckAttempts < maxBalanceCheckAttempts) {
+        try {
+          balance = await readContract(config, {
+            address: paymentData.tokenContract,
+            abi: erc20Abi,
+            functionName: 'balanceOf',
+            args: [address]
+          });
 
-      if (balance < amountInUnits) {
+          addDebugLog('success', '💰 Balance check complete', {
+            tokenContract: paymentData.tokenContract,
+            userAddress: address,
+            balance: balance.toString(),
+            required: amountInUnits.toString(),
+            hasEnough: balance >= amountInUnits,
+            difference: (balance - amountInUnits).toString(),
+            attemptNumber: balanceCheckAttempts + 1
+          });
+
+          break; // Success, exit retry loop
+        } catch (balanceError) {
+          balanceCheckAttempts++;
+          addDebugLog('warning', `⚠️ Balance check attempt ${balanceCheckAttempts} failed`, {
+            error: balanceError.message,
+            cause: balanceError.cause?.shortMessage || balanceError.cause?.message,
+            details: balanceError.details,
+            willRetry: balanceCheckAttempts < maxBalanceCheckAttempts,
+            tokenContract: paymentData.tokenContract,
+            network: chain?.name
+          });
+
+          if (balanceCheckAttempts >= maxBalanceCheckAttempts) {
+            addDebugLog('warning', '⚠️ Balance check failed after all retries, proceeding without validation');
+            addDebugLog('info', '💡 Wallet will validate balance during transaction execution');
+            balance = null; // Skip balance validation
+            break;
+          }
+
+          // Exponential backoff: 1s, 2s, 3s
+          await new Promise(resolve => setTimeout(resolve, 1000 * balanceCheckAttempts));
+        }
+      }
+
+      // Only validate balance if we successfully retrieved it
+      if (balance !== null && balance < amountInUnits) {
         addDebugLog('error', '❌ Insufficient token balance', {
           required: amountInUnits.toString(),
           available: balance.toString(),
           token: paymentData.token
         });
         throw new Error(`Insufficient ${paymentData.token} balance. Required: ${paymentData.amount} ${paymentData.token}`);
+      } else if (balance === null) {
+        addDebugLog('info', '⏭️ Skipping balance validation due to RPC errors - wallet will handle it');
       }
 
       // Step 2: Check and approve if needed (aligned with useTransactionHandling)
       addDebugLog('info', '🔐 Step 2: Checking token allowance...');
 
-      const allowance = await readContract(config, {
-        address: paymentData.tokenContract,
-        abi: erc20Abi,
-        functionName: 'allowance',
-        args: [address, paymentData.contractAddress]
-      });
+      let allowance = BigInt(0); // Default to 0 (needs approval)
+      let allowanceCheckAttempts = 0;
+      const maxAllowanceCheckAttempts = 3;
 
-      addDebugLog('success', '🔐 Allowance check complete', {
-        spender: paymentData.contractAddress,
-        allowance: allowance.toString(),
-        required: amountInUnits.toString(),
-        needsApproval: allowance < amountInUnits,
-        currentAllowance: allowance.toString()
-      });
+      // ✅ RETRY LOGIC: Try allowance check with exponential backoff
+      while (allowanceCheckAttempts < maxAllowanceCheckAttempts) {
+        try {
+          allowance = await readContract(config, {
+            address: paymentData.tokenContract,
+            abi: erc20Abi,
+            functionName: 'allowance',
+            args: [address, paymentData.contractAddress]
+          });
+
+          addDebugLog('success', '🔐 Allowance check complete', {
+            spender: paymentData.contractAddress,
+            allowance: allowance.toString(),
+            required: amountInUnits.toString(),
+            needsApproval: allowance < amountInUnits,
+            currentAllowance: allowance.toString(),
+            attemptNumber: allowanceCheckAttempts + 1
+          });
+
+          break; // Success, exit retry loop
+        } catch (allowanceError) {
+          allowanceCheckAttempts++;
+          addDebugLog('warning', `⚠️ Allowance check attempt ${allowanceCheckAttempts} failed`, {
+            error: allowanceError.message,
+            cause: allowanceError.cause?.shortMessage || allowanceError.cause?.message,
+            willRetry: allowanceCheckAttempts < maxAllowanceCheckAttempts,
+            tokenContract: paymentData.tokenContract
+          });
+
+          if (allowanceCheckAttempts >= maxAllowanceCheckAttempts) {
+            addDebugLog('warning', '⚠️ Allowance check failed after all retries, defaulting to 0 (will request approval)');
+            allowance = BigInt(0); // Default to 0 to trigger approval
+            break;
+          }
+
+          // Exponential backoff: 1s, 2s, 3s
+          await new Promise(resolve => setTimeout(resolve, 1000 * allowanceCheckAttempts));
+        }
+      }
 
       if (allowance < amountInUnits) {
         addDebugLog('info', '🔐 Executing token approval...');

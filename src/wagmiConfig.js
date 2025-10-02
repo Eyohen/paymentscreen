@@ -1,4 +1,4 @@
-import { createConfig, http } from 'wagmi';
+import { createConfig, http, fallback } from 'wagmi';
 import { mainnet, bsc, polygon, arbitrum, optimism, avalanche } from 'wagmi/chains';
 import { injected } from 'wagmi/connectors';
 
@@ -21,6 +21,7 @@ const metaMask = () => injected({
   })
 });
 
+// ✅ IMPROVED: Multiple fallback RPC endpoints for reliability
 // Create wagmi config with mobile-focused wallets only
 export const config = createConfig({
   chains: [mainnet, bsc, polygon, arbitrum, optimism, avalanche],
@@ -30,42 +31,104 @@ export const config = createConfig({
     injected(), // Generic fallback and Coinbase support
   ],
   transports: {
-    // ⭐ Ethereum Mainnet - Cloudflare (most reliable public RPC)
-    [mainnet.id]: http('https://cloudflare-eth.com', {
-      timeout: 30_000,
-      retryCount: 3,
-      retryDelay: 1000
-    }),
-    // ⭐ BSC - Official Binance RPC (primary official endpoint)
-    [bsc.id]: http('https://bsc-dataseed.binance.org', {
-      timeout: 30_000,
-      retryCount: 3,
-      retryDelay: 1000
-    }),
-    // ⭐ Polygon - Polygon official RPC (most reliable)
-    [polygon.id]: http('https://polygon-rpc.com', {
-      timeout: 30_000,
-      retryCount: 3,
-      retryDelay: 1000
-    }),
-    // ⭐ Arbitrum - Official Arbitrum One RPC
-    [arbitrum.id]: http('https://arb1.arbitrum.io/rpc', {
-      timeout: 30_000,
-      retryCount: 3,
-      retryDelay: 1000
-    }),
-    // ⭐ Optimism - Official Optimism Mainnet RPC
-    [optimism.id]: http('https://mainnet.optimism.io', {
-      timeout: 30_000,
-      retryCount: 3,
-      retryDelay: 1000
-    }),
-    // ⭐ Avalanche - Official Avalanche C-Chain RPC
-    [avalanche.id]: http('https://api.avax.network/ext/bc/C/rpc', {
-      timeout: 30_000,
-      retryCount: 3,
-      retryDelay: 1000
-    }),
+    // ⭐ Ethereum Mainnet - Multiple fallback RPCs for reliability
+    [mainnet.id]: fallback([
+      http('https://eth.llamarpc.com', {
+        timeout: 30_000,
+        retryCount: 2,
+      }),
+      http('https://rpc.ankr.com/eth', {
+        timeout: 30_000,
+        retryCount: 2,
+      }),
+      http('https://ethereum.publicnode.com', {
+        timeout: 30_000,
+        retryCount: 2,
+      }),
+      http('https://cloudflare-eth.com', {
+        timeout: 30_000,
+        retryCount: 2,
+      }),
+      http('https://eth.drpc.org', {
+        timeout: 30_000,
+        retryCount: 2,
+      }),
+    ]),
+    // ⭐ BSC - Multiple fallback RPCs
+    [bsc.id]: fallback([
+      http('https://bsc-dataseed1.binance.org', {
+        timeout: 30_000,
+        retryCount: 2,
+      }),
+      http('https://bsc-dataseed.binance.org', {
+        timeout: 30_000,
+        retryCount: 2,
+      }),
+      http('https://rpc.ankr.com/bsc', {
+        timeout: 30_000,
+        retryCount: 2,
+      }),
+    ]),
+    // ⭐ Polygon - Multiple fallback RPCs
+    [polygon.id]: fallback([
+      http('https://polygon-rpc.com', {
+        timeout: 30_000,
+        retryCount: 2,
+      }),
+      http('https://rpc.ankr.com/polygon', {
+        timeout: 30_000,
+        retryCount: 2,
+      }),
+      http('https://polygon.llamarpc.com', {
+        timeout: 30_000,
+        retryCount: 2,
+      }),
+    ]),
+    // ⭐ Arbitrum - Multiple fallback RPCs
+    [arbitrum.id]: fallback([
+      http('https://arb1.arbitrum.io/rpc', {
+        timeout: 30_000,
+        retryCount: 2,
+      }),
+      http('https://rpc.ankr.com/arbitrum', {
+        timeout: 30_000,
+        retryCount: 2,
+      }),
+      http('https://arbitrum.llamarpc.com', {
+        timeout: 30_000,
+        retryCount: 2,
+      }),
+    ]),
+    // ⭐ Optimism - Multiple fallback RPCs
+    [optimism.id]: fallback([
+      http('https://mainnet.optimism.io', {
+        timeout: 30_000,
+        retryCount: 2,
+      }),
+      http('https://rpc.ankr.com/optimism', {
+        timeout: 30_000,
+        retryCount: 2,
+      }),
+      http('https://optimism.llamarpc.com', {
+        timeout: 30_000,
+        retryCount: 2,
+      }),
+    ]),
+    // ⭐ Avalanche - Multiple fallback RPCs
+    [avalanche.id]: fallback([
+      http('https://api.avax.network/ext/bc/C/rpc', {
+        timeout: 30_000,
+        retryCount: 2,
+      }),
+      http('https://rpc.ankr.com/avalanche', {
+        timeout: 30_000,
+        retryCount: 2,
+      }),
+      http('https://avalanche.public-rpc.com', {
+        timeout: 30_000,
+        retryCount: 2,
+      }),
+    ]),
   },
 });
 
