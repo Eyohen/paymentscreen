@@ -14,13 +14,43 @@ if (typeof BigInt.prototype.toJSON === 'undefined') {
 // ⭐ GLOBAL DEBUG LOG STORE for Trust Wallet debugging
 // This allows helper functions outside the component to log to the debug panel
 const globalDebugLogs = [];
+
+// ⭐ Safe serialization helper for global logs (handles circular references)
+const safeSerialize = (obj, seen = new WeakSet()) => {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj === 'bigint') return obj.toString();
+  if (typeof obj === 'function') return '[Function]';
+  if (typeof obj === 'symbol') return obj.toString();
+  if (typeof obj !== 'object') return obj;
+
+  // ⭐ Detect circular references
+  if (seen.has(obj)) return '[Circular]';
+  seen.add(obj);
+
+  if (Array.isArray(obj)) {
+    return obj.map(item => safeSerialize(item, seen));
+  }
+
+  const safe = {};
+  try {
+    for (const key in obj) {
+      if (obj.hasOwnProperty(key)) {
+        safe[key] = safeSerialize(obj[key], seen);
+      }
+    }
+  } catch (error) {
+    return '[Serialization Error]';
+  }
+  return safe;
+};
+
 const addGlobalDebugLog = (type, message, data = null) => {
   const timestamp = new Date().toLocaleTimeString();
   const logEntry = {
     id: Date.now() + Math.random(),
     type,
     message,
-    data,
+    data: safeSerialize(data), // ⭐ Use safe serialization
     timestamp,
     iso: new Date().toISOString()
   };
@@ -176,7 +206,12 @@ const getTrustWalletProvider = () => {
 const detectWalletEnvironment = () => {
   const userAgent = navigator.userAgent.toLowerCase();
   const ethereum = window.ethereum;
-  const trustwalletProvider = getTrustWalletProvider();
+
+  // ⭐ FIX: Don't call getTrustWalletProvider() here to avoid circular calls during logging
+  // Instead, do a simple inline check for Trust Wallet
+  const trustwalletProvider = window.trustwallet?.ethereum ||
+                              window.ethereum?.providers?.find(p => p.isTrust || p.isTrustWallet) ||
+                              (window.ethereum?.isTrust || window.ethereum?.isTrustWallet ? window.ethereum : null);
 
   // Check multiple provider properties (MetaMask/Coinbase can have different structures)
   const providers = window.ethereum?.providers || [];
@@ -555,23 +590,40 @@ const EnhancedMobilePaymentFlow = () => {
   // API client
   const api = createApiClient();
 
-  // ✅ SAFE: Debug logging function with BigInt serialization
+  // ✅ SAFE: Debug logging function with BigInt serialization and circular reference protection
   const addDebugLog = (type, message, data = null) => {
     const timestamp = new Date().toLocaleTimeString();
 
-    // ✅ Convert BigInt to string to prevent serialization errors
-    const serializeSafeData = (obj) => {
+    // ✅ Convert BigInt to string and handle circular references
+    const serializeSafeData = (obj, seen = new WeakSet()) => {
       if (obj === null || obj === undefined) return obj;
       if (typeof obj === 'bigint') return obj.toString();
-      if (Array.isArray(obj)) return obj.map(serializeSafeData);
-      if (typeof obj === 'object') {
-        const safe = {};
-        for (const key in obj) {
-          safe[key] = serializeSafeData(obj[key]);
-        }
-        return safe;
+      if (typeof obj === 'function') return '[Function]';
+      if (typeof obj === 'symbol') return obj.toString();
+
+      // Primitive types
+      if (typeof obj !== 'object') return obj;
+
+      // ⭐ CRITICAL: Detect circular references
+      if (seen.has(obj)) return '[Circular Reference]';
+      seen.add(obj);
+
+      if (Array.isArray(obj)) {
+        return obj.map(item => serializeSafeData(item, seen));
       }
-      return obj;
+
+      // Objects
+      const safe = {};
+      try {
+        for (const key in obj) {
+          if (obj.hasOwnProperty(key)) {
+            safe[key] = serializeSafeData(obj[key], seen);
+          }
+        }
+      } catch (error) {
+        return '[Object - Serialization Error]';
+      }
+      return safe;
     };
 
     const logEntry = {
