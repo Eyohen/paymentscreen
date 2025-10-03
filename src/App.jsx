@@ -1,12 +1,10 @@
 import React from 'react';
 import { WagmiProvider } from 'wagmi';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { config } from './wagmiConfig';
+import { queryClient } from './config/queryClient';
 import EnhancedMobilePaymentFlow from './EnhancedMobilePaymentFlow';
 import AppWithWagmi from './AppWithWagmi';
-
-// Create a QueryClient instance
-const queryClient = new QueryClient();
 
 // Enhanced detection for mobile-optimized experience
 const detectPaymentMode = () => {
@@ -16,8 +14,8 @@ const detectPaymentMode = () => {
   const contractAddress = params.get('contractAddress');
   const tokenContract = params.get('tokenContract');
 
-  // ⭐ OPTIMIZED: Only require paymentId - EnhancedMobilePaymentFlow will fetch missing data from backend
-  const hasValidParams = !!paymentId;
+  // 🔧 CRITICAL FIX: Only require paymentId - EnhancedMobilePaymentFlow will fetch missing data from backend
+  const hasValidParams = !!paymentId; // Only paymentId required
   const hasFullParams = !!(paymentId && contractAddress && tokenContract);
   const isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 

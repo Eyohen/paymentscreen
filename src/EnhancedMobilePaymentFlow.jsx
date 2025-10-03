@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useAccount, useConnect, useDisconnect, useSwitchChain } from 'wagmi';
+import { useState, useEffect, useCallback } from 'react';
+import { useAccount, useConnect, useSwitchChain } from 'wagmi';
 import { readContract, writeContract, simulateContract } from '@wagmi/core';
 import { parseUnits, erc20Abi } from 'viem';
 import { config } from './wagmiConfig';
@@ -384,11 +384,11 @@ const EnhancedMobilePaymentFlow = () => {
   const [debugLogs, setDebugLogs] = useState([]);
   const [showDebugPanel, setShowDebugPanel] = useState(true); // Show debug by default
   const [verifying, setVerifying] = useState(false); // For manual verification
+  const [copySuccess, setCopySuccess] = useState(false); // For copy logs feedback
 
   // Wagmi hooks
   const { address, isConnected, chain } = useAccount();
   const { connect, connectors, error: connectError, isPending } = useConnect();
-  const { disconnect } = useDisconnect();
   const { switchChain } = useSwitchChain();
 
   // API client
@@ -426,11 +426,98 @@ const EnhancedMobilePaymentFlow = () => {
     console.log(`[${type.toUpperCase()}] [${timestamp}] ${message}`, data || '');
   };
 
-  // ⭐ TRUST WALLET FIX: Listen for trustwallet#initialized event (Manifest V3)
+  // 📋 Copy all logs to clipboard for mobile debugging
+  const copyLogsToClipboard = async () => {
+    if (debugLogs.length === 0) {
+      return;
+    }
+
+    try {
+      // Format logs as readable text
+      const logsText = debugLogs.map(log => {
+        let text = `[${log.timestamp}] [${log.type.toUpperCase()}] ${log.message}`;
+        if (log.data) {
+          text += `\nData: ${JSON.stringify(log.data, null, 2)}`;
+        }
+        return text;
+      }).join('\n\n' + '='.repeat(80) + '\n\n');
+
+      // Add header with system info
+      const header = `COINLEY PAYMENT SCREEN DEBUG LOGS
+${'='.repeat(80)}
+Generated: ${new Date().toISOString()}
+User Agent: ${navigator.userAgent}
+URL: ${window.location.href}
+Total Logs: ${debugLogs.length}
+${'='.repeat(80)}
+
+`;
+
+      const fullText = header + logsText;
+
+      // Try modern clipboard API first
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(fullText);
+        setCopySuccess(true);
+        setTimeout(() => setCopySuccess(false), 2000);
+      } else {
+        // Fallback for older browsers/mobile
+        const textArea = document.createElement('textarea');
+        textArea.value = fullText;
+        textArea.style.position = 'fixed';
+        textArea.style.left = '-999999px';
+        document.body.appendChild(textArea);
+        textArea.select();
+        // @ts-ignore - execCommand is deprecated but needed for older browsers
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        setCopySuccess(true);
+        setTimeout(() => setCopySuccess(false), 2000);
+      }
+
+      addDebugLog('success', '📋 Logs copied to clipboard successfully');
+    } catch (err) {
+      addDebugLog('error', '❌ Failed to copy logs', { error: err.message });
+    }
+  };
+
+  // ⭐ METAMASK: Listen for ethereum#initialized event (Official MetaMask Docs)
+  const listenForMetaMaskInitialized = ({ timeout = 3000 } = {}) => {
+    return new Promise((resolve) => {
+      // Check if already available
+      if (window.ethereum && window.ethereum.isMetaMask) {
+        console.log('✅ MetaMask already available');
+        resolve(window.ethereum);
+        return;
+      }
+
+      const handleInitialization = () => {
+        console.log('✅ ethereum#initialized event fired!');
+        const provider = window.ethereum;
+        resolve(provider);
+      };
+
+      window.addEventListener('ethereum#initialized', handleInitialization, { once: true });
+
+      setTimeout(() => {
+        window.removeEventListener('ethereum#initialized', handleInitialization);
+        resolve(window.ethereum || null);
+      }, timeout);
+    });
+  };
+
+  // ⭐ TRUST WALLET: Listen for trustwallet#initialized event (Manifest V3)
   const listenForTrustWalletInitialized = ({ timeout = 3000 } = {}) => {
     return new Promise((resolve) => {
+      // Check if already available
+      if (window.trustwallet) {
+        console.log('✅ Trust Wallet already available');
+        resolve(window.trustwallet);
+        return;
+      }
+
       const handleInitialization = () => {
-        console.log('✅ Trust Wallet initialized event fired!');
+        console.log('✅ trustwallet#initialized event fired!');
         const trustProvider = window.trustwallet;
         resolve(trustProvider);
       };
@@ -449,23 +536,83 @@ const EnhancedMobilePaymentFlow = () => {
     let pollCount = 0;
     const maxPolls = 100; // 20 seconds (100 polls * 200ms)
     let pollInterval = null;
-    let trustWalletPromise = null;
+    let providerPromise = null;
 
     console.log('🔍 Starting IMPROVED provider detection...');
     console.log('🔍 User Agent:', navigator.userAgent);
     console.log('🔍 Initial window.ethereum:', !!window.ethereum);
     console.log('🔍 Initial window.trustwallet:', !!window.trustwallet);
 
-    // ✅ TRUST WALLET SPECIFIC: Start listening for initialization event immediately
-    const isMobileTrustWallet = navigator.userAgent.toLowerCase().includes('trust');
-    if (isMobileTrustWallet) {
-      console.log('🔍 Trust Wallet detected in User Agent, listening for trustwallet#initialized event...');
-      trustWalletPromise = listenForTrustWalletInitialized({ timeout: 5000 });
-      trustWalletPromise.then(trustProvider => {
+    const userAgent = navigator.userAgent.toLowerCase();
+    const isMobileMetaMask = userAgent.includes('metamask');
+    const isMobileTrustWallet = userAgent.includes('trust');
+    const isMobileCoinbase = userAgent.includes('coinbase');
+
+    // ✅ METAMASK SPECIFIC: Listen for ethereum#initialized event
+    if (isMobileMetaMask) {
+      console.log('🦊 MetaMask detected in User Agent, listening for ethereum#initialized event...');
+      providerPromise = listenForMetaMaskInitialized({ timeout: 5000 });
+      providerPromise.then(provider => {
+        if (provider) {
+          console.log('✅ MetaMask provider received from event!');
+          const env = detectWalletEnvironment();
+          console.log('✅ Wallet environment:', env);
+          setWalletEnv(env);
+          setProviderReady(true);
+          setCurrentStep('loading');
+          if (pollInterval) clearInterval(pollInterval);
+        }
+      });
+    }
+    // ✅ TRUST WALLET SPECIFIC: Listen for trustwallet#initialized event
+    else if (isMobileTrustWallet) {
+      console.log('🛡️ Trust Wallet detected in User Agent, listening for trustwallet#initialized event...');
+      providerPromise = listenForTrustWalletInitialized({ timeout: 5000 });
+      providerPromise.then(trustProvider => {
         if (trustProvider) {
           console.log('✅ Trust Wallet provider received from event!');
           const env = detectWalletEnvironment();
           console.log('✅ Wallet environment:', env);
+          setWalletEnv(env);
+          setProviderReady(true);
+          setCurrentStep('loading');
+          if (pollInterval) clearInterval(pollInterval);
+        }
+      });
+    }
+    // ✅ COINBASE SPECIFIC: Listen for ethereum#initialized (Coinbase uses same event)
+    else if (isMobileCoinbase) {
+      console.log('💙 Coinbase Wallet detected in User Agent, listening for ethereum#initialized event...');
+      providerPromise = listenForMetaMaskInitialized({ timeout: 5000 });
+      providerPromise.then(provider => {
+        if (provider) {
+          console.log('✅ Coinbase Wallet provider received from event!');
+          const env = detectWalletEnvironment();
+          console.log('✅ Wallet environment:', env);
+          setWalletEnv(env);
+          setProviderReady(true);
+          setCurrentStep('loading');
+          if (pollInterval) clearInterval(pollInterval);
+        }
+      });
+    }
+    // ✅ FALLBACK: Listen for both events if wallet not detected in UA
+    else {
+      console.log('🔍 Wallet not detected in UA, listening for both ethereum#initialized and trustwallet#initialized...');
+      listenForMetaMaskInitialized({ timeout: 5000 }).then(provider => {
+        if (provider && !providerReady) {
+          console.log('✅ ethereum provider received from event!');
+          const env = detectWalletEnvironment();
+          setWalletEnv(env);
+          setProviderReady(true);
+          setCurrentStep('loading');
+          if (pollInterval) clearInterval(pollInterval);
+        }
+      });
+      listenForTrustWalletInitialized({ timeout: 5000 }).then(provider => {
+        if (provider && !providerReady) {
+          console.log('✅ trustwallet provider received from event!');
+          const env = detectWalletEnvironment();
           setWalletEnv(env);
           setProviderReady(true);
           setCurrentStep('loading');
@@ -667,7 +814,8 @@ const EnhancedMobilePaymentFlow = () => {
 
       if (connectionAttempts < 2) {
         console.log('🔄 Retrying connection...');
-        setTimeout(() => connectWallet(), 2000);
+        // 🔧 CRITICAL FIX: Use 3s retry delay for mobile wallet browser initialization
+        setTimeout(() => connectWallet(), 3000); // ✅ 3 seconds per MetaMask/Trust/Coinbase docs
       } else {
         setError(`Connection failed: ${err.message}`);
         setCurrentStep('error');
@@ -720,10 +868,11 @@ const EnhancedMobilePaymentFlow = () => {
   }, [isConnected, address, chain, paymentData, switchChain]);
 
   // Auto-connect for in-app browsers (aligned with best practices)
+  // 🔧 CRITICAL FIX: Mobile wallet browsers need 3+ seconds to fully initialize
   useEffect(() => {
     if (currentStep === 'connection' && walletEnv?.isInAppBrowser && !isConnected) {
-      console.log('🚀 Auto-connecting for in-app browser...');
-      setTimeout(() => connectWallet(), 1000);
+      console.log('🚀 Auto-connecting for in-app browser (3 second delay for proper initialization)...');
+      setTimeout(() => connectWallet(), 3000); // ✅ 3 seconds per MetaMask/Trust/Coinbase docs
     }
   }, [currentStep, walletEnv, isConnected, connectWallet]);
 
@@ -1480,12 +1629,20 @@ const EnhancedMobilePaymentFlow = () => {
                   </div>
 
                   {debugLogs.length > 0 && (
-                    <button
-                      onClick={() => setDebugLogs([])}
-                      className="mt-4 px-3 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
-                    >
-                      Clear Logs
-                    </button>
+                    <div className="mt-4 flex gap-2">
+                      <button
+                        onClick={copyLogsToClipboard}
+                        className="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 flex items-center gap-1"
+                      >
+                        {copySuccess ? '✅ Copied!' : '📋 Copy Logs'}
+                      </button>
+                      <button
+                        onClick={() => setDebugLogs([])}
+                        className="px-3 py-1 bg-red-600 text-white rounded text-xs hover:bg-red-700"
+                      >
+                        Clear Logs
+                      </button>
+                    </div>
                   )}
                 </div>
               )}

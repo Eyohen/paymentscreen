@@ -442,10 +442,10 @@ const PaymentFlow = () => {
 
       if (isCoinbaseWallet) {
         console.log('💙 Coinbase Wallet detected - using stable connection handling');
-        // For Coinbase, wait longer before considering connection stable
+        // 🔧 CRITICAL FIX: Coinbase needs more time to stabilize
         setTimeout(() => {
           setConnectionStable(true);
-        }, 2000);
+        }, 3000); // ✅ 3 seconds for Coinbase stability
       } else {
         setConnectionStable(true);
       }
@@ -459,11 +459,12 @@ const PaymentFlow = () => {
         switchChain({ chainId: targetChainId });
       } else if (!hasStartedApproval && !processing && connectionStable) {
         // Start the automatic approval process only once and only when connection is stable
-        console.log('🚀 Chain correct, starting automatic approval in 1.5s...');
+        // 🔧 CRITICAL FIX: Give mobile wallets more time to initialize
+        console.log('🚀 Chain correct, starting automatic approval in 3.5s...');
         setHasStartedApproval(true);
         setTimeout(() => {
           handleAutomaticApproval();
-        }, 1500);
+        }, 3500); // ✅ 3.5 seconds total delay for mobile wallet initialization
       } else {
         console.log('⚠️ Skipping approval - already started, processing, or connection not stable');
       }
@@ -583,8 +584,8 @@ const PaymentFlow = () => {
     setProcessing(true);
     setCurrentStep('payment');
 
-    // Add longer delay for mobile wallets to ensure proper initialization
-    const delay = isMobile() ? 2000 : 1000;
+    // 🔧 CRITICAL FIX: Mobile wallets need more time for proper initialization
+    const delay = isMobile() ? 3000 : 1500; // ✅ 3s for mobile, 1.5s for desktop
 
     setTimeout(() => {
       executeApprovalAndPayment();
