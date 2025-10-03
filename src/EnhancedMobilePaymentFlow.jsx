@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAccount, useConnect, useSwitchChain } from 'wagmi';
 import { readContract, writeContract, simulateContract } from '@wagmi/core';
 import { parseUnits, erc20Abi } from 'viem';
@@ -1177,11 +1177,17 @@ ${'='.repeat(80)}
       }
       return false;
     }
-  }, [isConnected, connectors, connect, connectionAttempts, walletEnv, addDebugLog]);
+  }, [isConnected, connectors, connect, connectionAttempts, walletEnv]);
 
   // Handle successful connection
+  // ⭐ FIX: Use ref to track if we've already processed this connection to prevent loops
+  const connectionProcessedRef = React.useRef(false);
+
   useEffect(() => {
-    if (isConnected && address && paymentData) {
+    if (isConnected && address && paymentData && !connectionProcessedRef.current) {
+      // Mark as processed immediately to prevent re-entry
+      connectionProcessedRef.current = true;
+
       console.log('✅ Wallet connected successfully:', address);
       addDebugLog('success', '✅ Wallet connected successfully', {
         address: address,
@@ -1235,20 +1241,46 @@ ${'='.repeat(80)}
         setCurrentStep('confirmation');
       }
     }
-  }, [isConnected, address, chain, paymentData, switchChain, addDebugLog]);
+
+    // Reset the ref when connection is lost
+    if (!isConnected) {
+      connectionProcessedRef.current = false;
+    }
+  }, [isConnected, address, chain, paymentData, switchChain]);
 
   // Auto-connect for in-app browsers (aligned with best practices)
   // 🔧 CRITICAL FIX: Mobile wallet browsers need 3+ seconds to fully initialize
+  // ⭐ FIX: Use ref to ensure we only auto-connect once
+  const autoConnectAttemptedRef = React.useRef(false);
+
   useEffect(() => {
-    if (currentStep === 'connection' && walletEnv?.isInAppBrowser && !isConnected) {
+    if (currentStep === 'connection' &&
+        walletEnv?.isInAppBrowser &&
+        !isConnected &&
+        !autoConnectAttemptedRef.current) {
+
+      // Mark as attempted immediately
+      autoConnectAttemptedRef.current = true;
+
       console.log('🚀 Auto-connecting for in-app browser (3 second delay for proper initialization)...');
       addDebugLog('info', '🚀 Auto-connecting for in-app browser', {
         walletType: walletEnv.walletType,
         delay: '3 seconds'
       });
-      setTimeout(() => connectWallet(), 3000); // ✅ 3 seconds per MetaMask/Trust/Coinbase docs
+
+      const timeoutId = setTimeout(() => {
+        connectWallet();
+      }, 3000); // ✅ 3 seconds per MetaMask/Trust/Coinbase docs
+
+      // Cleanup timeout if component unmounts
+      return () => clearTimeout(timeoutId);
     }
-  }, [currentStep, walletEnv, isConnected, connectWallet, addDebugLog]);
+
+    // Reset the ref when we leave the connection step or get disconnected
+    if (currentStep !== 'connection' || !walletEnv?.isInAppBrowser) {
+      autoConnectAttemptedRef.current = false;
+    }
+  }, [currentStep, walletEnv?.isInAppBrowser, isConnected]);
 
   // Enhanced payment execution (aligned with useTransactionHandling.js)
   const executePayment = async () => {
