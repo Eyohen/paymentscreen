@@ -11,21 +11,54 @@ if (typeof BigInt.prototype.toJSON === 'undefined') {
   };
 }
 
+// ⭐ ENHANCED Trust Wallet Provider Detection (Based on Official Docs)
+// Trust Wallet injects providers at: window.trustwallet.ethereum, window.ethereum.providers, window.ethereum
+const getTrustWalletProvider = () => {
+  // Method 1: Check window.trustwallet.ethereum (Mobile in-app browser)
+  if (window.trustwallet?.ethereum) {
+    console.log('✅ Trust Wallet provider found at window.trustwallet.ethereum');
+    return window.trustwallet.ethereum;
+  }
+
+  // Method 2: Check window.ethereum.providers array
+  if (window.ethereum?.providers) {
+    const trustProvider = window.ethereum.providers.find(p => p.isTrust || p.isTrustWallet);
+    if (trustProvider) {
+      console.log('✅ Trust Wallet provider found in window.ethereum.providers');
+      return trustProvider;
+    }
+  }
+
+  // Method 3: Check window.ethereum directly
+  if (window.ethereum?.isTrust || window.ethereum?.isTrustWallet) {
+    console.log('✅ Trust Wallet provider found at window.ethereum');
+    return window.ethereum;
+  }
+
+  // Method 4: Check legacy window.trustwallet
+  if (window.trustwallet) {
+    console.log('✅ Trust Wallet provider found at window.trustwallet (legacy)');
+    return window.trustwallet;
+  }
+
+  return null;
+};
+
 // Enhanced wallet environment detection (aligned with coinley-test research)
 // ✅ IMPROVED: More aggressive detection for Trust Wallet, MetaMask and Coinbase
 const detectWalletEnvironment = () => {
   const userAgent = navigator.userAgent.toLowerCase();
   const ethereum = window.ethereum;
-  const trustwallet = window.trustwallet;
+  const trustwalletProvider = getTrustWalletProvider();
 
   // Check multiple provider properties (MetaMask/Coinbase can have different structures)
   const providers = window.ethereum?.providers || [];
   const hasMetaMask = !!(ethereum?.isMetaMask || providers.find(p => p.isMetaMask));
   const hasCoinbase = !!(ethereum?.isCoinbaseWallet || ethereum?.isCoinbaseBrowser || providers.find(p => p.isCoinbaseWallet));
 
-  // ✅ TRUST WALLET: Check window.trustwallet AND window.ethereum
+  // ✅ TRUST WALLET: Use comprehensive detection
   const hasTrust = !!(
-    trustwallet ||
+    trustwalletProvider ||
     ethereum?.isTrust ||
     ethereum?.isTrustWallet ||
     userAgent.includes('trust')
@@ -33,18 +66,19 @@ const detectWalletEnvironment = () => {
 
   return {
     isMobile: /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent),
-    isInAppBrowser: !!((ethereum || trustwallet) && (hasMetaMask || hasTrust || hasCoinbase)),
+    isInAppBrowser: !!((ethereum || trustwalletProvider) && (hasMetaMask || hasTrust || hasCoinbase)),
     walletType: hasTrust ? 'trust' :
                 hasMetaMask ? 'metamask' :
                 hasCoinbase ? 'coinbase' :
                 userAgent.includes('trust') ? 'trust' :
                 userAgent.includes('metamask') ? 'metamask' :
                 userAgent.includes('coinbase') ? 'coinbase' : 'unknown',
-    hasEthereum: !!(ethereum || trustwallet),
+    hasEthereum: !!(ethereum || trustwalletProvider),
     hasMetaMask,
     hasCoinbase,
     hasTrust,
-    hasTrustWallet: !!trustwallet
+    hasTrustWallet: !!trustwalletProvider,
+    trustWalletProvider: trustwalletProvider // ⭐ Expose Trust Wallet provider
   };
 };
 
@@ -509,24 +543,29 @@ ${'='.repeat(80)}
   // ⭐ TRUST WALLET: Listen for trustwallet#initialized event (Manifest V3)
   const listenForTrustWalletInitialized = ({ timeout = 3000 } = {}) => {
     return new Promise((resolve) => {
-      // Check if already available
-      if (window.trustwallet) {
-        console.log('✅ Trust Wallet already available');
-        resolve(window.trustwallet);
+      // Check if already available using comprehensive detection
+      const existingProvider = getTrustWalletProvider();
+      if (existingProvider) {
+        console.log('✅ Trust Wallet provider already available');
+        resolve(existingProvider);
         return;
       }
 
       const handleInitialization = () => {
         console.log('✅ trustwallet#initialized event fired!');
-        const trustProvider = window.trustwallet;
+        const trustProvider = getTrustWalletProvider();
         resolve(trustProvider);
       };
 
+      // Listen for both possible initialization events
       window.addEventListener('trustwallet#initialized', handleInitialization, { once: true });
+      window.addEventListener('ethereum#initialized', handleInitialization, { once: true });
 
       setTimeout(() => {
         window.removeEventListener('trustwallet#initialized', handleInitialization);
-        resolve(null);
+        window.removeEventListener('ethereum#initialized', handleInitialization);
+        const trustProvider = getTrustWalletProvider();
+        resolve(trustProvider || null);
       }, timeout);
     });
   };
@@ -624,8 +663,9 @@ ${'='.repeat(80)}
     const checkProvider = () => {
       pollCount++;
 
-      // ✅ TRUST WALLET: Check window.trustwallet specifically
-      const hasTrustWallet = !!window.trustwallet;
+      // ✅ ENHANCED: Use comprehensive Trust Wallet detection
+      const trustWalletProvider = getTrustWalletProvider();
+      const hasTrustWallet = !!trustWalletProvider;
       const hasWindowEthereum = !!window.ethereum;
       const hasEthereumProviders = !!(window.ethereum?.providers && window.ethereum.providers.length > 0);
       const hasMetaMaskProvider = !!(window.ethereum?.isMetaMask || window.ethereum?.providers?.find(p => p.isMetaMask));
@@ -634,12 +674,17 @@ ${'='.repeat(80)}
 
       console.log(`⏳ Poll ${pollCount}/${maxPolls}:`, {
         hasTrustWallet,
+        trustWalletLocation: trustWalletProvider ? (
+          window.trustwallet?.ethereum ? 'window.trustwallet.ethereum' :
+          window.ethereum?.isTrust ? 'window.ethereum' :
+          'providers array'
+        ) : 'not found',
         hasWindowEthereum,
         hasEthereumProviders,
         hasMetaMaskProvider,
         hasCoinbaseProvider,
         hasTrustProvider,
-        providerType: window.ethereum?.isTrust || window.ethereum?.isTrustWallet ? 'Trust Wallet' :
+        providerType: hasTrustWallet ? 'Trust Wallet' :
                       window.ethereum?.isMetaMask ? 'MetaMask' :
                       window.ethereum?.isCoinbaseWallet ? 'Coinbase' : 'Unknown'
       });
@@ -787,23 +832,46 @@ ${'='.repeat(80)}
       setConnectionAttempts(prev => prev + 1);
       console.log(`🔄 Connection attempt ${connectionAttempts + 1} for ${walletEnv.walletType}`);
 
-      // Simplified connector logic based on research
+      // ⭐ ENHANCED connector logic with Trust Wallet specific handling
       let targetConnector = null;
 
+      console.log('🔍 Available connectors:', connectors.map(c => ({ id: c.id, name: c.name })));
+      console.log('🔍 Wallet type:', walletEnv.walletType);
+      console.log('🔍 Is in-app browser:', walletEnv.isInAppBrowser);
+
       if (walletEnv.isInAppBrowser) {
-        // In wallet browser - use injected connector (most reliable)
-        targetConnector = connectors.find(c => c.id === 'injected');
-        console.log('📱 Using injected connector for in-app browser');
+        // ⭐ TRUST WALLET SPECIFIC: Use trustWallet connector for Trust Wallet
+        if (walletEnv.walletType === 'trust') {
+          targetConnector = connectors.find(c => c.id === 'trustWallet');
+          if (targetConnector) {
+            console.log('🛡️ Using Trust Wallet specific connector');
+          } else {
+            console.log('⚠️ Trust Wallet connector not found, falling back to injected');
+            targetConnector = connectors.find(c => c.id === 'injected');
+          }
+        }
+        // MetaMask - use metaMask connector
+        else if (walletEnv.walletType === 'metamask') {
+          targetConnector = connectors.find(c => c.id === 'metaMask') || connectors.find(c => c.id === 'injected');
+          console.log('🦊 Using MetaMask connector');
+        }
+        // Coinbase or others - use injected
+        else {
+          targetConnector = connectors.find(c => c.id === 'injected');
+          console.log('📱 Using injected connector for in-app browser');
+        }
       } else {
-        // Use injected as primary, specific connectors as fallback
-        targetConnector = connectors.find(c => c.id === 'injected') ||
-                         connectors.find(c => c.id === walletEnv.walletType) ||
+        // Desktop: Use specific connectors or injected fallback
+        targetConnector = connectors.find(c => c.id === walletEnv.walletType) ||
+                         connectors.find(c => c.id === 'injected') ||
                          connectors[0];
       }
 
       if (!targetConnector) {
         throw new Error('No suitable wallet connector found');
       }
+
+      console.log(`✅ Selected connector: ${targetConnector.id} (${targetConnector.name})`);
 
       await connect({ connector: targetConnector });
       console.log('✅ Wallet connection initiated');

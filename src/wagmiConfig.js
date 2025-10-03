@@ -3,12 +3,45 @@ import { http, fallback } from 'viem';
 import { mainnet, bsc, polygon, arbitrum, optimism, avalanche, celo } from 'wagmi/chains';
 import { injected } from 'wagmi/connectors';
 
-// Trust Wallet connector
+// ⭐ ENHANCED Trust Wallet connector - Checks multiple provider locations
+const getTrustWalletProvider = () => {
+  if (typeof window === 'undefined') return undefined;
+
+  // Method 1: Mobile in-app browser - window.trustwallet.ethereum
+  if (window.trustwallet?.ethereum) {
+    console.log('🛡️ Trust Wallet provider: window.trustwallet.ethereum');
+    return window.trustwallet.ethereum;
+  }
+
+  // Method 2: Check window.ethereum.providers array
+  if (window.ethereum?.providers) {
+    const trustProvider = window.ethereum.providers.find(p => p.isTrust || p.isTrustWallet);
+    if (trustProvider) {
+      console.log('🛡️ Trust Wallet provider: window.ethereum.providers');
+      return trustProvider;
+    }
+  }
+
+  // Method 3: Check window.ethereum directly
+  if (window.ethereum?.isTrust || window.ethereum?.isTrustWallet) {
+    console.log('🛡️ Trust Wallet provider: window.ethereum');
+    return window.ethereum;
+  }
+
+  // Method 4: Legacy window.trustwallet
+  if (window.trustwallet) {
+    console.log('🛡️ Trust Wallet provider: window.trustwallet (legacy)');
+    return window.trustwallet;
+  }
+
+  return undefined;
+};
+
 const trustWallet = () => injected({
   target: () => ({
     id: 'trustWallet',
     name: 'Trust Wallet',
-    provider: typeof window !== 'undefined' ? window.trustwallet : undefined,
+    provider: getTrustWalletProvider(),
   })
 });
 
