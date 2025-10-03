@@ -11,12 +11,61 @@ if (typeof BigInt.prototype.toJSON === 'undefined') {
   };
 }
 
+// ⭐ GLOBAL DEBUG LOG STORE for Trust Wallet debugging
+// This allows helper functions outside the component to log to the debug panel
+const globalDebugLogs = [];
+const addGlobalDebugLog = (type, message, data = null) => {
+  const timestamp = new Date().toLocaleTimeString();
+  const logEntry = {
+    id: Date.now() + Math.random(),
+    type,
+    message,
+    data,
+    timestamp,
+    iso: new Date().toISOString()
+  };
+  globalDebugLogs.push(logEntry);
+  // Also log to console
+  console.log(`[${type.toUpperCase()}] [${timestamp}] ${message}`, data || '');
+};
+
 // ⭐ ENHANCED Trust Wallet Provider Detection (Based on Official Docs)
 // Trust Wallet injects providers at: window.trustwallet.ethereum, window.ethereum.providers, window.ethereum
 const getTrustWalletProvider = () => {
+  console.log('🔍 [TRUST WALLET DEBUG] Starting provider detection...');
+  console.log('🔍 [TRUST WALLET DEBUG] window.trustwallet exists:', !!window.trustwallet);
+  console.log('🔍 [TRUST WALLET DEBUG] window.trustwallet?.ethereum exists:', !!window.trustwallet?.ethereum);
+  console.log('🔍 [TRUST WALLET DEBUG] window.ethereum exists:', !!window.ethereum);
+  console.log('🔍 [TRUST WALLET DEBUG] window.ethereum?.providers exists:', !!window.ethereum?.providers);
+
+  // Log all available properties on window.trustwallet if it exists
+  if (window.trustwallet) {
+    console.log('🔍 [TRUST WALLET DEBUG] window.trustwallet keys:', Object.keys(window.trustwallet));
+    console.log('🔍 [TRUST WALLET DEBUG] window.trustwallet.ethereum type:', typeof window.trustwallet.ethereum);
+  }
+
+  // Log all providers in array if it exists
+  if (window.ethereum?.providers) {
+    console.log('🔍 [TRUST WALLET DEBUG] Number of providers:', window.ethereum.providers.length);
+    window.ethereum.providers.forEach((provider, index) => {
+      console.log(`🔍 [TRUST WALLET DEBUG] Provider ${index}:`, {
+        isTrust: provider.isTrust,
+        isTrustWallet: provider.isTrustWallet,
+        isMetaMask: provider.isMetaMask,
+        isCoinbaseWallet: provider.isCoinbaseWallet
+      });
+    });
+  }
+
   // Method 1: Check window.trustwallet.ethereum (Mobile in-app browser)
   if (window.trustwallet?.ethereum) {
-    console.log('✅ Trust Wallet provider found at window.trustwallet.ethereum');
+    console.log('✅ [TRUST WALLET DEBUG] Provider found at window.trustwallet.ethereum');
+    console.log('✅ [TRUST WALLET DEBUG] Provider type:', typeof window.trustwallet.ethereum);
+    console.log('✅ [TRUST WALLET DEBUG] Provider has request method:', typeof window.trustwallet.ethereum.request === 'function');
+    addGlobalDebugLog('success', '✅ Trust Wallet provider found at window.trustwallet.ethereum', {
+      location: 'window.trustwallet.ethereum',
+      hasRequest: typeof window.trustwallet.ethereum.request === 'function'
+    });
     return window.trustwallet.ethereum;
   }
 
@@ -24,23 +73,49 @@ const getTrustWalletProvider = () => {
   if (window.ethereum?.providers) {
     const trustProvider = window.ethereum.providers.find(p => p.isTrust || p.isTrustWallet);
     if (trustProvider) {
-      console.log('✅ Trust Wallet provider found in window.ethereum.providers');
+      console.log('✅ [TRUST WALLET DEBUG] Provider found in window.ethereum.providers');
+      console.log('✅ [TRUST WALLET DEBUG] Provider has request method:', typeof trustProvider.request === 'function');
+      addGlobalDebugLog('success', '✅ Trust Wallet provider found in window.ethereum.providers', {
+        location: 'window.ethereum.providers',
+        hasRequest: typeof trustProvider.request === 'function'
+      });
       return trustProvider;
     }
   }
 
   // Method 3: Check window.ethereum directly
   if (window.ethereum?.isTrust || window.ethereum?.isTrustWallet) {
-    console.log('✅ Trust Wallet provider found at window.ethereum');
+    console.log('✅ [TRUST WALLET DEBUG] Provider found at window.ethereum');
+    console.log('✅ [TRUST WALLET DEBUG] isTrust:', window.ethereum.isTrust);
+    console.log('✅ [TRUST WALLET DEBUG] isTrustWallet:', window.ethereum.isTrustWallet);
+    addGlobalDebugLog('success', '✅ Trust Wallet provider found at window.ethereum', {
+      location: 'window.ethereum',
+      isTrust: window.ethereum.isTrust,
+      isTrustWallet: window.ethereum.isTrustWallet
+    });
     return window.ethereum;
   }
 
   // Method 4: Check legacy window.trustwallet
   if (window.trustwallet) {
-    console.log('✅ Trust Wallet provider found at window.trustwallet (legacy)');
+    console.log('✅ [TRUST WALLET DEBUG] Provider found at window.trustwallet (legacy)');
+    console.log('✅ [TRUST WALLET DEBUG] Provider has request method:', typeof window.trustwallet.request === 'function');
+    addGlobalDebugLog('success', '✅ Trust Wallet provider found at window.trustwallet (legacy)', {
+      location: 'window.trustwallet',
+      hasRequest: typeof window.trustwallet.request === 'function'
+    });
     return window.trustwallet;
   }
 
+  console.log('❌ [TRUST WALLET DEBUG] No Trust Wallet provider found in any location');
+  addGlobalDebugLog('error', '❌ Trust Wallet provider NOT FOUND in any location', {
+    checkedLocations: [
+      'window.trustwallet.ethereum',
+      'window.ethereum.providers',
+      'window.ethereum',
+      'window.trustwallet'
+    ]
+  });
   return null;
 };
 
@@ -460,6 +535,21 @@ const EnhancedMobilePaymentFlow = () => {
     console.log(`[${type.toUpperCase()}] [${timestamp}] ${message}`, data || '');
   };
 
+  // ⭐ SYNC GLOBAL DEBUG LOGS: Merge global logs into component state for UI display
+  useEffect(() => {
+    const syncInterval = setInterval(() => {
+      if (globalDebugLogs.length > 0) {
+        setDebugLogs(prev => {
+          const newLogs = [...prev, ...globalDebugLogs].slice(-50);
+          globalDebugLogs.length = 0; // Clear global logs after syncing
+          return newLogs;
+        });
+      }
+    }, 300); // Sync every 300ms for responsive logging
+
+    return () => clearInterval(syncInterval);
+  }, []);
+
   // 📋 Copy all logs to clipboard for mobile debugging
   const copyLogsToClipboard = async () => {
     if (debugLogs.length === 0) {
@@ -542,30 +632,71 @@ ${'='.repeat(80)}
 
   // ⭐ TRUST WALLET: Listen for trustwallet#initialized event (Manifest V3)
   const listenForTrustWalletInitialized = ({ timeout = 3000 } = {}) => {
+    console.log(`🛡️ [TRUST INIT] Starting Trust Wallet initialization listener (timeout: ${timeout}ms)`);
+
     return new Promise((resolve) => {
       // Check if already available using comprehensive detection
+      console.log('🛡️ [TRUST INIT] Checking if provider already exists...');
       const existingProvider = getTrustWalletProvider();
       if (existingProvider) {
-        console.log('✅ Trust Wallet provider already available');
+        console.log('✅ [TRUST INIT] Trust Wallet provider already available, resolving immediately');
+        addDebugLog('success', '✅ Trust Wallet provider already initialized');
         resolve(existingProvider);
         return;
       }
+      console.log('⏳ [TRUST INIT] Provider not found yet, setting up event listeners...');
 
-      const handleInitialization = () => {
-        console.log('✅ trustwallet#initialized event fired!');
-        const trustProvider = getTrustWalletProvider();
-        resolve(trustProvider);
+      let eventFired = false;
+
+      const handleInitialization = (eventName) => {
+        return () => {
+          if (eventFired) {
+            console.log(`⚠️ [TRUST INIT] ${eventName} event fired but already handled, ignoring`);
+            return;
+          }
+          eventFired = true;
+          console.log(`✅ [TRUST INIT] ${eventName} event fired!`);
+          addDebugLog('info', `✅ ${eventName} event fired for Trust Wallet`);
+
+          const trustProvider = getTrustWalletProvider();
+          if (trustProvider) {
+            console.log('✅ [TRUST INIT] Provider found after event, resolving');
+            addDebugLog('success', '✅ Trust Wallet provider found after initialization event');
+          } else {
+            console.log('⚠️ [TRUST INIT] Event fired but provider still not found!');
+            addDebugLog('warn', '⚠️ Initialization event fired but provider not found');
+          }
+          resolve(trustProvider);
+        };
       };
 
       // Listen for both possible initialization events
-      window.addEventListener('trustwallet#initialized', handleInitialization, { once: true });
-      window.addEventListener('ethereum#initialized', handleInitialization, { once: true });
+      console.log('🛡️ [TRUST INIT] Adding event listeners for trustwallet#initialized and ethereum#initialized');
+      const trustHandler = handleInitialization('trustwallet#initialized');
+      const ethHandler = handleInitialization('ethereum#initialized');
+
+      window.addEventListener('trustwallet#initialized', trustHandler, { once: true });
+      window.addEventListener('ethereum#initialized', ethHandler, { once: true });
+      addDebugLog('info', `⏳ Listening for Trust Wallet initialization events (${timeout}ms timeout)`);
 
       setTimeout(() => {
-        window.removeEventListener('trustwallet#initialized', handleInitialization);
-        window.removeEventListener('ethereum#initialized', handleInitialization);
-        const trustProvider = getTrustWalletProvider();
-        resolve(trustProvider || null);
+        if (!eventFired) {
+          console.log(`⏱️ [TRUST INIT] Timeout after ${timeout}ms, checking provider one last time...`);
+          addDebugLog('warn', `⏱️ Initialization timeout after ${timeout}ms`);
+
+          window.removeEventListener('trustwallet#initialized', trustHandler);
+          window.removeEventListener('ethereum#initialized', ethHandler);
+
+          const trustProvider = getTrustWalletProvider();
+          if (trustProvider) {
+            console.log('✅ [TRUST INIT] Provider found on timeout check!');
+            addDebugLog('success', '✅ Trust Wallet provider found on timeout');
+          } else {
+            console.log('❌ [TRUST INIT] Provider still not found after timeout');
+            addDebugLog('error', '❌ Trust Wallet provider not found after timeout');
+          }
+          resolve(trustProvider || null);
+        }
       }, timeout);
     });
   };
@@ -820,24 +951,34 @@ ${'='.repeat(80)}
   const connectWallet = useCallback(async () => {
     if (isConnected) {
       console.log('✅ Wallet already connected');
+      addDebugLog('success', '✅ Wallet already connected');
       return true;
     }
 
     if (!walletEnv) {
       console.log('⚠️ Wallet environment not ready yet');
+      addDebugLog('warn', '⚠️ Wallet environment not ready yet');
       return false;
     }
 
     try {
       setConnectionAttempts(prev => prev + 1);
       console.log(`🔄 Connection attempt ${connectionAttempts + 1} for ${walletEnv.walletType}`);
+      addDebugLog('info', `🔄 Connection attempt ${connectionAttempts + 1} for ${walletEnv.walletType}`);
 
       // ⭐ ENHANCED connector logic with Trust Wallet specific handling
       let targetConnector = null;
 
-      console.log('🔍 Available connectors:', connectors.map(c => ({ id: c.id, name: c.name })));
+      const availableConnectors = connectors.map(c => ({ id: c.id, name: c.name }));
+      console.log('🔍 Available connectors:', availableConnectors);
       console.log('🔍 Wallet type:', walletEnv.walletType);
       console.log('🔍 Is in-app browser:', walletEnv.isInAppBrowser);
+      addDebugLog('info', '🔍 Available connectors', availableConnectors);
+      addDebugLog('info', '🔍 Wallet environment', {
+        walletType: walletEnv.walletType,
+        isInAppBrowser: walletEnv.isInAppBrowser,
+        hasTrustWallet: walletEnv.hasTrustWallet
+      });
 
       if (walletEnv.isInAppBrowser) {
         // ⭐ TRUST WALLET SPECIFIC: Use trustWallet connector for Trust Wallet
@@ -845,8 +986,13 @@ ${'='.repeat(80)}
           targetConnector = connectors.find(c => c.id === 'trustWallet');
           if (targetConnector) {
             console.log('🛡️ Using Trust Wallet specific connector');
+            addDebugLog('success', '🛡️ Using Trust Wallet specific connector', {
+              connectorId: targetConnector.id,
+              connectorName: targetConnector.name
+            });
           } else {
             console.log('⚠️ Trust Wallet connector not found, falling back to injected');
+            addDebugLog('warn', '⚠️ Trust Wallet connector not found, falling back to injected');
             targetConnector = connectors.find(c => c.id === 'injected');
           }
         }
@@ -854,53 +1000,78 @@ ${'='.repeat(80)}
         else if (walletEnv.walletType === 'metamask') {
           targetConnector = connectors.find(c => c.id === 'metaMask') || connectors.find(c => c.id === 'injected');
           console.log('🦊 Using MetaMask connector');
+          addDebugLog('info', '🦊 Using MetaMask connector', { connectorId: targetConnector?.id });
         }
         // Coinbase or others - use injected
         else {
           targetConnector = connectors.find(c => c.id === 'injected');
           console.log('📱 Using injected connector for in-app browser');
+          addDebugLog('info', '📱 Using injected connector for in-app browser');
         }
       } else {
         // Desktop: Use specific connectors or injected fallback
         targetConnector = connectors.find(c => c.id === walletEnv.walletType) ||
                          connectors.find(c => c.id === 'injected') ||
                          connectors[0];
+        addDebugLog('info', '💻 Using desktop connector', { connectorId: targetConnector?.id });
       }
 
       if (!targetConnector) {
-        throw new Error('No suitable wallet connector found');
+        const errorMsg = 'No suitable wallet connector found';
+        addDebugLog('error', `❌ ${errorMsg}`, { availableConnectors });
+        throw new Error(errorMsg);
       }
 
       console.log(`✅ Selected connector: ${targetConnector.id} (${targetConnector.name})`);
+      addDebugLog('success', `✅ Selected connector: ${targetConnector.id}`, {
+        connectorId: targetConnector.id,
+        connectorName: targetConnector.name
+      });
 
       await connect({ connector: targetConnector });
       console.log('✅ Wallet connection initiated');
+      addDebugLog('success', '✅ Wallet connection initiated');
       return true;
 
     } catch (err) {
       console.error('❌ Wallet connection failed:', err);
+      addDebugLog('error', '❌ Wallet connection failed', {
+        error: err.message,
+        attemptNumber: connectionAttempts + 1
+      });
 
       if (connectionAttempts < 2) {
         console.log('🔄 Retrying connection...');
+        addDebugLog('info', '🔄 Retrying connection in 3 seconds...');
         // 🔧 CRITICAL FIX: Use 3s retry delay for mobile wallet browser initialization
         setTimeout(() => connectWallet(), 3000); // ✅ 3 seconds per MetaMask/Trust/Coinbase docs
       } else {
         setError(`Connection failed: ${err.message}`);
         setCurrentStep('error');
+        addDebugLog('error', '❌ Connection failed after retries', { error: err.message });
       }
       return false;
     }
-  }, [isConnected, connectors, connect, connectionAttempts, walletEnv]);
+  }, [isConnected, connectors, connect, connectionAttempts, walletEnv, addDebugLog]);
 
   // Handle successful connection
   useEffect(() => {
     if (isConnected && address && paymentData) {
       console.log('✅ Wallet connected successfully:', address);
+      addDebugLog('success', '✅ Wallet connected successfully', {
+        address: address,
+        chainId: chain?.id,
+        chainName: chain?.name
+      });
 
       // Check if we're on the correct chain
       const targetChainId = parseInt(paymentData.chainId);
       if (chain?.id !== targetChainId) {
         console.log(`🔗 Switching to chain ${targetChainId}...`);
+        addDebugLog('info', `🔗 Switching to chain ${targetChainId}`, {
+          currentChain: chain?.id,
+          targetChain: targetChainId
+        });
 
         // ✅ MOBILE FIX: Check if switchChain is available and returns a promise
         if (switchChain) {
@@ -910,39 +1081,49 @@ ${'='.repeat(80)}
             // Check if result is a promise before calling .then()
             if (switchPromise && typeof switchPromise.then === 'function') {
               switchPromise.then(() => {
+                addDebugLog('success', '✅ Chain switch successful');
                 setCurrentStep('confirmation');
               }).catch(err => {
                 console.error('❌ Chain switch failed:', err);
+                addDebugLog('error', '❌ Chain switch failed', { error: err.message });
                 setError(`Please switch to the correct network in your wallet`);
               });
             } else {
               // switchChain didn't return a promise, proceed anyway
               console.warn('⚠️ switchChain did not return a promise, proceeding to confirmation');
+              addDebugLog('warn', '⚠️ switchChain did not return a promise, proceeding anyway');
               setCurrentStep('confirmation');
             }
           } catch (err) {
             console.error('❌ Chain switch error:', err);
+            addDebugLog('error', '❌ Chain switch error', { error: err.message });
             setError(`Please switch to the correct network in your wallet`);
           }
         } else {
           // switchChain not available, ask user to switch manually
           console.warn('⚠️ switchChain not available, user must switch network manually');
+          addDebugLog('warn', '⚠️ switchChain not available, user must switch manually');
           setError(`Please switch to ${paymentData.network} network in your wallet`);
         }
       } else {
+        addDebugLog('success', '✅ Already on correct chain, proceeding to confirmation');
         setCurrentStep('confirmation');
       }
     }
-  }, [isConnected, address, chain, paymentData, switchChain]);
+  }, [isConnected, address, chain, paymentData, switchChain, addDebugLog]);
 
   // Auto-connect for in-app browsers (aligned with best practices)
   // 🔧 CRITICAL FIX: Mobile wallet browsers need 3+ seconds to fully initialize
   useEffect(() => {
     if (currentStep === 'connection' && walletEnv?.isInAppBrowser && !isConnected) {
       console.log('🚀 Auto-connecting for in-app browser (3 second delay for proper initialization)...');
+      addDebugLog('info', '🚀 Auto-connecting for in-app browser', {
+        walletType: walletEnv.walletType,
+        delay: '3 seconds'
+      });
       setTimeout(() => connectWallet(), 3000); // ✅ 3 seconds per MetaMask/Trust/Coinbase docs
     }
-  }, [currentStep, walletEnv, isConnected, connectWallet]);
+  }, [currentStep, walletEnv, isConnected, connectWallet, addDebugLog]);
 
   // Enhanced payment execution (aligned with useTransactionHandling.js)
   const executePayment = async () => {

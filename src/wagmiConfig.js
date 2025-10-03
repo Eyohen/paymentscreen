@@ -5,35 +5,57 @@ import { injected } from 'wagmi/connectors';
 
 // ⭐ ENHANCED Trust Wallet connector - Checks multiple provider locations
 const getTrustWalletProvider = () => {
-  if (typeof window === 'undefined') return undefined;
+  console.log('🛡️ [WAGMI CONFIG] Getting Trust Wallet provider...');
+
+  if (typeof window === 'undefined') {
+    console.log('🛡️ [WAGMI CONFIG] Window is undefined (SSR)');
+    return undefined;
+  }
+
+  console.log('🛡️ [WAGMI CONFIG] Checking provider locations...');
+  console.log('🛡️ [WAGMI CONFIG] window.trustwallet exists:', !!window.trustwallet);
+  console.log('🛡️ [WAGMI CONFIG] window.trustwallet?.ethereum exists:', !!window.trustwallet?.ethereum);
+  console.log('🛡️ [WAGMI CONFIG] window.ethereum exists:', !!window.ethereum);
+  console.log('🛡️ [WAGMI CONFIG] User Agent:', navigator.userAgent);
 
   // Method 1: Mobile in-app browser - window.trustwallet.ethereum
   if (window.trustwallet?.ethereum) {
-    console.log('🛡️ Trust Wallet provider: window.trustwallet.ethereum');
+    console.log('✅ [WAGMI CONFIG] Trust Wallet provider: window.trustwallet.ethereum');
+    console.log('✅ [WAGMI CONFIG] Provider type:', typeof window.trustwallet.ethereum);
+    console.log('✅ [WAGMI CONFIG] Has request method:', typeof window.trustwallet.ethereum.request === 'function');
+    console.log('✅ [WAGMI CONFIG] Provider properties:', Object.keys(window.trustwallet.ethereum).slice(0, 10));
     return window.trustwallet.ethereum;
   }
 
   // Method 2: Check window.ethereum.providers array
   if (window.ethereum?.providers) {
+    console.log('🛡️ [WAGMI CONFIG] Checking providers array, count:', window.ethereum.providers.length);
     const trustProvider = window.ethereum.providers.find(p => p.isTrust || p.isTrustWallet);
     if (trustProvider) {
-      console.log('🛡️ Trust Wallet provider: window.ethereum.providers');
+      console.log('✅ [WAGMI CONFIG] Trust Wallet provider: window.ethereum.providers');
+      console.log('✅ [WAGMI CONFIG] Provider isTrust:', trustProvider.isTrust);
+      console.log('✅ [WAGMI CONFIG] Provider isTrustWallet:', trustProvider.isTrustWallet);
       return trustProvider;
     }
+    console.log('⚠️ [WAGMI CONFIG] No Trust Wallet found in providers array');
   }
 
   // Method 3: Check window.ethereum directly
   if (window.ethereum?.isTrust || window.ethereum?.isTrustWallet) {
-    console.log('🛡️ Trust Wallet provider: window.ethereum');
+    console.log('✅ [WAGMI CONFIG] Trust Wallet provider: window.ethereum');
+    console.log('✅ [WAGMI CONFIG] isTrust:', window.ethereum.isTrust);
+    console.log('✅ [WAGMI CONFIG] isTrustWallet:', window.ethereum.isTrustWallet);
     return window.ethereum;
   }
 
   // Method 4: Legacy window.trustwallet
   if (window.trustwallet) {
-    console.log('🛡️ Trust Wallet provider: window.trustwallet (legacy)');
+    console.log('✅ [WAGMI CONFIG] Trust Wallet provider: window.trustwallet (legacy)');
+    console.log('✅ [WAGMI CONFIG] Has request method:', typeof window.trustwallet.request === 'function');
     return window.trustwallet;
   }
 
+  console.log('❌ [WAGMI CONFIG] No Trust Wallet provider found');
   return undefined;
 };
 
