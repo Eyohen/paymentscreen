@@ -38,10 +38,40 @@ const getTrustWalletProvider = () => {
   console.log('🔍 [TRUST WALLET DEBUG] window.ethereum exists:', !!window.ethereum);
   console.log('🔍 [TRUST WALLET DEBUG] window.ethereum?.providers exists:', !!window.ethereum?.providers);
 
+  // ⭐ CRITICAL DIAGNOSTIC: Log ALL window properties to see what Trust Wallet actually injects
+  const windowKeys = Object.keys(window).filter(key =>
+    key.toLowerCase().includes('trust') ||
+    key.toLowerCase().includes('wallet') ||
+    key.toLowerCase().includes('ethereum') ||
+    key.toLowerCase().includes('web3')
+  );
+  console.log('🔍 [TRUST WALLET DEBUG] Wallet-related window properties:', windowKeys);
+  addGlobalDebugLog('info', '🔍 Wallet-related window properties found', windowKeys);
+
   // Log all available properties on window.trustwallet if it exists
   if (window.trustwallet) {
     console.log('🔍 [TRUST WALLET DEBUG] window.trustwallet keys:', Object.keys(window.trustwallet));
     console.log('🔍 [TRUST WALLET DEBUG] window.trustwallet.ethereum type:', typeof window.trustwallet.ethereum);
+    addGlobalDebugLog('info', '🔍 window.trustwallet keys', Object.keys(window.trustwallet));
+  }
+
+  // Log window.ethereum details
+  if (window.ethereum) {
+    console.log('🔍 [TRUST WALLET DEBUG] window.ethereum properties:', {
+      isTrust: window.ethereum.isTrust,
+      isTrustWallet: window.ethereum.isTrustWallet,
+      isMetaMask: window.ethereum.isMetaMask,
+      isCoinbaseWallet: window.ethereum.isCoinbaseWallet,
+      hasProviders: !!window.ethereum.providers,
+      hasRequest: typeof window.ethereum.request === 'function'
+    });
+    addGlobalDebugLog('info', '🔍 window.ethereum properties', {
+      isTrust: window.ethereum.isTrust,
+      isTrustWallet: window.ethereum.isTrustWallet,
+      isMetaMask: window.ethereum.isMetaMask,
+      isCoinbaseWallet: window.ethereum.isCoinbaseWallet,
+      hasProviders: !!window.ethereum.providers
+    });
   }
 
   // Log all providers in array if it exists
@@ -55,6 +85,14 @@ const getTrustWalletProvider = () => {
         isCoinbaseWallet: provider.isCoinbaseWallet
       });
     });
+    addGlobalDebugLog('info', '🔍 Ethereum providers array',
+      window.ethereum.providers.map((p, i) => ({
+        index: i,
+        isTrust: p.isTrust,
+        isTrustWallet: p.isTrustWallet,
+        isMetaMask: p.isMetaMask
+      }))
+    );
   }
 
   // Method 1: Check window.trustwallet.ethereum (Mobile in-app browser)
@@ -107,14 +145,53 @@ const getTrustWalletProvider = () => {
     return window.trustwallet;
   }
 
+  // ⭐ FALLBACK METHOD 5: Trust Wallet Android WebView does NOT include "trust" in User Agent!
+  // If we're in an Android WebView and window.ethereum exists, it might be Trust Wallet
+  if (window.ethereum && typeof window.ethereum.request === 'function') {
+    const userAgent = navigator.userAgent.toLowerCase();
+    const isAndroidWebView = userAgent.includes('android') && userAgent.includes('wv');
+
+    // Trust Wallet Android uses generic Android WebView without "trust" in UA
+    if (isAndroidWebView) {
+      console.log('✅ [TRUST WALLET DEBUG] Provider found in Android WebView (likely Trust Wallet)');
+      console.log('✅ [TRUST WALLET DEBUG] User Agent:', navigator.userAgent);
+      console.log('✅ [TRUST WALLET DEBUG] window.ethereum exists with request method');
+      addGlobalDebugLog('success', '✅ Provider found in Android WebView (likely Trust Wallet)', {
+        location: 'window.ethereum',
+        userAgent: navigator.userAgent,
+        hasRequest: true,
+        isAndroidWebView: true
+      });
+      return window.ethereum;
+    }
+  }
+
+  // ⭐ CRITICAL: Log what IS available in window to diagnose Trust Wallet injection
   console.log('❌ [TRUST WALLET DEBUG] No Trust Wallet provider found in any location');
+  console.log('🔍 [TRUST WALLET DEBUG] window.ethereum:', window.ethereum);
+  console.log('🔍 [TRUST WALLET DEBUG] window.web3:', window.web3);
+  console.log('🔍 [TRUST WALLET DEBUG] window object keys containing crypto/wallet/ethereum:',
+    Object.keys(window).filter(k =>
+      k.toLowerCase().includes('eth') ||
+      k.toLowerCase().includes('web3') ||
+      k.toLowerCase().includes('wallet') ||
+      k.toLowerCase().includes('crypto') ||
+      k.toLowerCase().includes('trust')
+    )
+  );
+
   addGlobalDebugLog('error', '❌ Trust Wallet provider NOT FOUND in any location', {
     checkedLocations: [
       'window.trustwallet.ethereum',
       'window.ethereum.providers',
-      'window.ethereum',
-      'window.trustwallet'
-    ]
+      'window.ethereum (with flags)',
+      'window.trustwallet',
+      'window.ethereum (fallback)'
+    ],
+    hasWindowEthereum: !!window.ethereum,
+    hasWindowWeb3: !!window.web3,
+    userAgent: navigator.userAgent,
+    isAndroidWebView: navigator.userAgent.toLowerCase().includes('android') && navigator.userAgent.toLowerCase().includes('wv')
   });
   return null;
 };
