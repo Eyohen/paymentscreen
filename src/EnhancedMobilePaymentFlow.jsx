@@ -272,6 +272,33 @@ const validatePaymentParameters = (params) => {
 const getValidatedUrlParams = () => {
   const params = new URLSearchParams(window.location.search);
 
+  // ⭐ ENHANCED DEBUG: Log EVERYTHING we receive from the deeplink
+  console.log(`
+🔍 ========================================
+   PAYMENT SCREEN RECEIVED URL
+========================================
+Full URL: ${window.location.href}
+
+📋 All URL Parameters:
+${Array.from(params.entries()).map(([key, value]) => `  ${key}: ${value}`).join('\n')}
+
+🔑 Critical Parameters Check:
+- paymentId: ${params.get('paymentId') || '❌ MISSING'}
+- chainId: ${params.get('chainId') || '❌ MISSING'}
+- preferredWallet: ${params.get('preferredWallet') || '❌ MISSING'}
+- isMobile: ${params.get('isMobile') || '❌ MISSING'}
+- contractAddress: ${params.get('contractAddress') || '❌ MISSING'}
+- tokenContract: ${params.get('tokenContract') || '❌ MISSING'}
+
+🌐 Browser Environment:
+- User Agent: ${navigator.userAgent}
+- Is Android WebView: ${navigator.userAgent.includes('wv')}
+- window.ethereum exists: ${!!window.ethereum}
+- window.trustwallet exists: ${!!window.trustwallet}
+
+========================================
+  `);
+
   // Helper function to get parameter by multiple possible names
   const getParam = (names) => {
     for (const name of names) {
