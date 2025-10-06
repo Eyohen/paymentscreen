@@ -87,117 +87,121 @@ export const config = createConfig({
     injected(), // Generic fallback and Coinbase support
   ],
   transports: {
-    // ⭐ Ethereum Mainnet - Multiple fallback RPCs for reliability
+    // ⭐ Ethereum Mainnet - Best free public RPCs
     [mainnet.id]: fallback([
-      http('https://eth.llamarpc.com', {
-        timeout: 30_000,
-        retryCount: 2,
+      http('https://cloudflare-eth.com', {
+        timeout: 10_000,
+        retryCount: 1,
       }),
-      http('https://rpc.ankr.com/eth', {
-        timeout: 30_000,
-        retryCount: 2,
+      http('https://eth.llamarpc.com', {
+        timeout: 10_000,
+        retryCount: 1,
       }),
       http('https://ethereum.publicnode.com', {
-        timeout: 30_000,
-        retryCount: 2,
+        timeout: 10_000,
+        retryCount: 1,
       }),
-      http('https://cloudflare-eth.com', {
-        timeout: 30_000,
-        retryCount: 2,
-      }),
-      http('https://eth.drpc.org', {
-        timeout: 30_000,
-        retryCount: 2,
+      http('https://1rpc.io/eth', {
+        timeout: 10_000,
+        retryCount: 1,
       }),
     ]),
-    // ⭐ BSC - Multiple fallback RPCs
+    // ⭐ BSC - Official endpoints (10K/5min rate limit per endpoint)
     [bsc.id]: fallback([
-      http('https://bsc-dataseed1.binance.org', {
-        timeout: 30_000,
-        retryCount: 2,
+      http('https://bsc-dataseed.bnbchain.org', {
+        timeout: 10_000,
+        retryCount: 1,
       }),
-      http('https://bsc-dataseed.binance.org', {
-        timeout: 30_000,
-        retryCount: 2,
+      http('https://bsc-dataseed-public.bnbchain.org', {
+        timeout: 10_000,
+        retryCount: 1,
       }),
-      http('https://rpc.ankr.com/bsc', {
-        timeout: 30_000,
-        retryCount: 2,
+      http('https://bsc-dataseed.nariox.org', {
+        timeout: 10_000,
+        retryCount: 1,
+      }),
+      http('https://bsc.nodereal.io', {
+        timeout: 10_000,
+        retryCount: 1,
       }),
     ]),
-    // ⭐ Polygon - Multiple fallback RPCs
+    // ⭐ Polygon - Official + reliable free endpoints
     [polygon.id]: fallback([
-      http('https://polygon-rpc.com', {
-        timeout: 30_000,
-        retryCount: 2,
+      http('https://rpc-mainnet.matic.network', {
+        timeout: 10_000,
+        retryCount: 1,
       }),
-      http('https://rpc.ankr.com/polygon', {
-        timeout: 30_000,
-        retryCount: 2,
+      http('https://polygon-rpc.com', {
+        timeout: 10_000,
+        retryCount: 1,
       }),
       http('https://polygon.llamarpc.com', {
-        timeout: 30_000,
-        retryCount: 2,
+        timeout: 10_000,
+        retryCount: 1,
+      }),
+      http('https://1rpc.io/matic', {
+        timeout: 10_000,
+        retryCount: 1,
       }),
     ]),
-    // ⭐ Arbitrum - Multiple fallback RPCs
+    // ⭐ Arbitrum - Multiple fallback RPCs (removed Ankr)
     [arbitrum.id]: fallback([
       http('https://arb1.arbitrum.io/rpc', {
-        timeout: 30_000,
-        retryCount: 2,
-      }),
-      http('https://rpc.ankr.com/arbitrum', {
-        timeout: 30_000,
-        retryCount: 2,
+        timeout: 10_000,
+        retryCount: 1,
       }),
       http('https://arbitrum.llamarpc.com', {
-        timeout: 30_000,
-        retryCount: 2,
+        timeout: 10_000,
+        retryCount: 1,
+      }),
+      http('https://arbitrum.drpc.org', {
+        timeout: 10_000,
+        retryCount: 1,
       }),
     ]),
-    // ⭐ Optimism - Multiple fallback RPCs
+    // ⭐ Optimism - Multiple fallback RPCs (removed Ankr)
     [optimism.id]: fallback([
       http('https://mainnet.optimism.io', {
-        timeout: 30_000,
-        retryCount: 2,
-      }),
-      http('https://rpc.ankr.com/optimism', {
-        timeout: 30_000,
-        retryCount: 2,
+        timeout: 10_000,
+        retryCount: 1,
       }),
       http('https://optimism.llamarpc.com', {
-        timeout: 30_000,
-        retryCount: 2,
+        timeout: 10_000,
+        retryCount: 1,
+      }),
+      http('https://optimism.drpc.org', {
+        timeout: 10_000,
+        retryCount: 1,
       }),
     ]),
-    // ⭐ Avalanche - Multiple fallback RPCs
+    // ⭐ Avalanche - Multiple fallback RPCs (removed Ankr)
     [avalanche.id]: fallback([
       http('https://api.avax.network/ext/bc/C/rpc', {
-        timeout: 30_000,
-        retryCount: 2,
-      }),
-      http('https://rpc.ankr.com/avalanche', {
-        timeout: 30_000,
-        retryCount: 2,
+        timeout: 10_000,
+        retryCount: 1,
       }),
       http('https://avalanche.public-rpc.com', {
-        timeout: 30_000,
-        retryCount: 2,
+        timeout: 10_000,
+        retryCount: 1,
+      }),
+      http('https://avalanche.drpc.org', {
+        timeout: 10_000,
+        retryCount: 1,
       }),
     ]),
-    // ⭐ Celo - Multiple fallback RPCs
+    // ⭐ Celo - Multiple fallback RPCs (removed Ankr)
     [celo.id]: fallback([
       http('https://forno.celo.org', {
-        timeout: 30_000,
-        retryCount: 2,
-      }),
-      http('https://rpc.ankr.com/celo', {
-        timeout: 30_000,
-        retryCount: 2,
+        timeout: 10_000,
+        retryCount: 1,
       }),
       http('https://celo.drpc.org', {
-        timeout: 30_000,
-        retryCount: 2,
+        timeout: 10_000,
+        retryCount: 1,
+      }),
+      http('https://1rpc.io/celo', {
+        timeout: 10_000,
+        retryCount: 1,
       }),
     ]),
   },
