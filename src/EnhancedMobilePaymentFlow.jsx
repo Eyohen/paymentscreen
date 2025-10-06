@@ -341,23 +341,43 @@ const getValidatedUrlParams = () => {
   };
 };
 
+// Fetch with timeout helper
+const fetchWithTimeout = async (url, options = {}, timeoutMs = 30000) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return response;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error(`Request timeout after ${timeoutMs}ms`);
+    }
+    throw error;
+  }
+};
+
 // Enhanced API client (aligned with paymentAPI.js structure)
 const createApiClient = () => {
-  const apiUrl = process.env.REACT_APP_COINLEY_API_URL || 'https://talented-mercy-production.up.railway.app';
-  const apiKey = process.env.REACT_APP_COINLEY_API_KEY || '';
-  const apiSecret = process.env.REACT_APP_COINLEY_API_SECRET || '';
+  const apiUrl = import.meta.env.VITE_COINLEY_API_URL || 'https://talented-mercy-production.up.railway.app';
+  const apiKey = import.meta.env.VITE_COINLEY_API_KEY || '';
+  const apiSecret = import.meta.env.VITE_COINLEY_API_SECRET || '';
 
   return {
     async getContractInfo(chainId) {
       const endpoint = `${apiUrl}/api/payments/contract/${chainId}`;
-      console.log('🔗 API Request Details:', {
+
+      addGlobalDebugLog('info', '🔗 Fetching contract ABI from backend', {
         endpoint,
         chainId,
         apiUrl,
         hasApiKey: !!apiKey,
-        hasApiSecret: !!apiSecret,
-        keyLength: apiKey ? apiKey.length : 0,
-        secretLength: apiSecret ? apiSecret.length : 0
+        hasApiSecret: !!apiSecret
       });
 
       try {
@@ -370,51 +390,60 @@ const createApiClient = () => {
           headers['x-api-key'] = apiKey;
           headers['x-api-secret'] = apiSecret;
         } else {
-          console.warn('⚠️ No API credentials configured - trying public access');
+          addGlobalDebugLog('warning', '⚠️ No API credentials - using public access');
         }
 
-        console.log('📡 Making request to:', endpoint);
-        console.log('📋 Request headers:', headers);
-
-        const response = await fetch(endpoint, {
+        addGlobalDebugLog('debug', '📡 Making API request', {
+          endpoint,
           method: 'GET',
-          headers,
-          mode: 'cors' // Explicitly set CORS mode
+          hasAuth: !!(apiKey && apiSecret)
         });
 
-        console.log('📥 Response received:', {
+        const response = await fetchWithTimeout(endpoint, {
+          method: 'GET',
+          headers,
+          mode: 'cors'
+        }, 30000);
+
+        addGlobalDebugLog('debug', '📥 Response received', {
           status: response.status,
           statusText: response.statusText,
-          headers: Object.fromEntries(response.headers.entries()),
-          url: response.url
+          ok: response.ok
         });
 
         if (!response.ok) {
           const errorText = await response.text();
-          console.error('❌ HTTP Error Response:', {
+          addGlobalDebugLog('error', '❌ HTTP Error Response', {
             status: response.status,
             statusText: response.statusText,
-            body: errorText
+            body: errorText.substring(0, 200)
           });
           throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
         }
 
         const result = await response.json();
-        console.log('📄 Response JSON:', result);
+        addGlobalDebugLog('debug', '📄 Parsing response', {
+          success: result.success,
+          hasAbi: !!result.contractInfo?.abi,
+          contractAddress: result.contractInfo?.address
+        });
 
         if (!result.success) {
-          console.error('❌ API returned failure:', result);
+          addGlobalDebugLog('error', '❌ API returned failure', result);
           throw new Error(result.message || 'Contract not supported on this network');
         }
 
-        console.log('✅ Contract info received:', result.contractInfo);
+        addGlobalDebugLog('success', '✅ Contract ABI fetched successfully', {
+          contractAddress: result.contractInfo.address,
+          abiLength: result.contractInfo.abi?.length || 0
+        });
+
         return result.contractInfo;
       } catch (error) {
-        console.error('❌ Complete error details:', {
+        addGlobalDebugLog('error', '❌ getContractInfo failed', {
           message: error.message,
           name: error.name,
-          stack: error.stack,
-          cause: error.cause
+          endpoint
         });
 
         // Check for specific error types
@@ -422,6 +451,8 @@ const createApiClient = () => {
           throw new Error(`Network error: Unable to reach backend at ${apiUrl}. Check CORS settings.`);
         } else if (error.message.includes('CORS')) {
           throw new Error(`CORS error: Backend not allowing requests from payment screen domain.`);
+        } else if (error.message.includes('timeout')) {
+          throw new Error(`Request timeout: Backend took too long to respond (>30s)`);
         } else {
           throw new Error(error.message || 'Failed to get contract information');
         }
@@ -1466,16 +1497,16 @@ ${'='.repeat(80)}
 
       addDebugLog('debug', '🔗 Fetching contract ABI from backend', {
         chainId,
-        apiUrl: process.env.REACT_APP_COINLEY_API_URL || 'https://talented-mercy-production.up.railway.app',
+        apiUrl: import.meta.env.VITE_COINLEY_API_URL || 'https://talented-mercy-production.up.railway.app',
         endpoint: `/api/payments/contract/${chainId}`
       });
 
       let contractInfo;
       try {
         addDebugLog('debug', '🌐 API Environment Check', {
-          apiUrl: process.env.REACT_APP_COINLEY_API_URL || 'https://talented-mercy-production.up.railway.app',
-          hasApiKey: !!(process.env.REACT_APP_COINLEY_API_KEY || ''),
-          hasApiSecret: !!(process.env.REACT_APP_COINLEY_API_SECRET || ''),
+          apiUrl: import.meta.env.VITE_COINLEY_API_URL || 'https://talented-mercy-production.up.railway.app',
+          hasApiKey: !!(import.meta.env.VITE_COINLEY_API_KEY || ''),
+          hasApiSecret: !!(import.meta.env.VITE_COINLEY_API_SECRET || ''),
           endpoint: `/api/payments/contract/${chainId}`,
           currentDomain: window.location.origin,
           userAgent: navigator.userAgent
