@@ -3,6 +3,7 @@ import { useAccount, useConnect, useSwitchChain } from 'wagmi';
 import { readContract, writeContract, simulateContract } from '@wagmi/core';
 import { parseUnits, erc20Abi } from 'viem';
 import { config } from './wagmiConfig';
+import { formatTransactionHash, getExplorerUrl, getExplorerName } from './utils/formatUtils';
 
 // ✅ CRITICAL: Add global BigInt serialization support to prevent JSON errors
 if (typeof BigInt.prototype.toJSON === 'undefined') {
@@ -1942,35 +1943,62 @@ ${'='.repeat(80)}
     </div>
   );
 
-  const renderSuccess = () => (
-    <div className="text-center p-8">
-      <div className="w-16 h-16 mx-auto bg-green-500 rounded-full flex items-center justify-center mb-4">
-        <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-        </svg>
-      </div>
-      <h2 className="text-xl font-bold text-gray-800 mb-2">Payment Successful!</h2>
-      <p className="text-gray-600 mb-6">Your split payment has been completed successfully</p>
+  const renderSuccess = () => {
+    const explorerUrl = transactionHash ? getExplorerUrl(transactionHash, paymentData.network) : null;
+    const explorerName = getExplorerName(paymentData.network);
 
-      <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-6">
-        <p className="text-sm text-green-700">
-          {paymentData.amount} {paymentData.token} sent to {paymentData.merchant}
-        </p>
-        {transactionHash && (
-          <p className="text-xs text-green-600 mt-2 font-mono">
-            TX: {transactionHash.slice(0, 10)}...{transactionHash.slice(-10)}
+    return (
+      <div className="text-center p-8">
+        <div className="w-16 h-16 mx-auto bg-green-500 rounded-full flex items-center justify-center mb-4">
+          <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+          </svg>
+        </div>
+        <h2 className="text-xl font-bold text-gray-800 mb-2">Payment Successful!</h2>
+        <p className="text-gray-600 mb-6">Your split payment has been completed successfully</p>
+
+        <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-6">
+          <p className="text-sm text-green-700 mb-3">
+            {paymentData.amount} {paymentData.token} sent to {paymentData.merchant}
           </p>
-        )}
-      </div>
+          {transactionHash && (
+            <>
+              <p className="text-xs text-green-600 font-mono mb-3">
+                TX: {formatTransactionHash(transactionHash)}
+              </p>
+              {explorerUrl && (
+                <a
+                  href={explorerUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 text-sm font-medium text-purple-600 hover:text-purple-700 transition-colors"
+                >
+                  View on {explorerName}
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className="h-4 w-4"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </a>
+              )}
+            </>
+          )}
+        </div>
 
-      <button
-        onClick={() => window.close()}
-        className="w-full bg-purple-600 text-white py-3 px-6 rounded-xl font-semibold hover:bg-purple-700"
-      >
-        Close
-      </button>
-    </div>
-  );
+        <button
+          onClick={() => window.close()}
+          className="w-full bg-purple-600 text-white py-3 px-6 rounded-xl font-semibold hover:bg-purple-700"
+        >
+          Close
+        </button>
+      </div>
+    );
+  };
 
   const renderError = () => (
     <div className="text-center p-8">
