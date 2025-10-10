@@ -4,6 +4,7 @@ import { readContract, writeContract, simulateContract } from '@wagmi/core';
 import { parseUnits, erc20Abi } from 'viem';
 import { config } from './wagmiConfig';
 import { formatTransactionHash, getExplorerUrl, getExplorerName } from './utils/formatUtils';
+import { DEBUG_MODE, debugLog, debugError } from './utils/debugUtils';
 
 // ✅ CRITICAL: Add global BigInt serialization support to prevent JSON errors
 if (typeof BigInt.prototype.toJSON === 'undefined') {
@@ -55,9 +56,16 @@ const addGlobalDebugLog = (type, message, data = null) => {
     timestamp,
     iso: new Date().toISOString()
   };
-  globalDebugLogs.push(logEntry);
-  // Also log to console
-  console.log(`[${type.toUpperCase()}] [${timestamp}] ${message}`, data || '');
+  // Only log in debug mode
+  if (DEBUG_MODE) {
+    globalDebugLogs.push(logEntry);
+    // Use safe debug logger
+    if (type === 'error') {
+      debugError(`[${timestamp}] ${message}`, data || '');
+    } else {
+      debugLog(`[${type.toUpperCase()}] [${timestamp}] ${message}`, data || '');
+    }
+  }
 };
 
 // ⭐ ENHANCED Trust Wallet Provider Detection (Based on Official Trust Wallet Docs)
@@ -2071,7 +2079,8 @@ ${'='.repeat(80)}
             </div>
           </div>
 
-          {/* Debug Panel */}
+          {/* Debug Panel - Only show in development mode */}
+          {DEBUG_MODE && (
           <div className="lg:w-1/2">
             <div className="bg-gray-900 rounded-2xl shadow-xl overflow-hidden">
               <div className="bg-gray-800 p-4 flex items-center justify-between">
@@ -2169,6 +2178,7 @@ ${'='.repeat(80)}
               </div>
             </div>
           </div>
+          )}
         </div>
       </div>
     </div>

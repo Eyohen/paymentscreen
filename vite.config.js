@@ -7,5 +7,16 @@ export default defineConfig({
   server: {
     host: true, // Allow external access for mobile testing
     port: 5173
+  },
+  build: {
+    minify: 'terser',
+    terserOptions: {
+      compress: {
+        // Remove console.log, console.info, console.debug in production
+        // Keep console.error and console.warn for critical issues
+        drop_console: ['log', 'info', 'debug'],
+        drop_debugger: true
+      }
+    }
   }
 })
