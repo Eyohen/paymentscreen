@@ -332,7 +332,8 @@ ${Array.from(params.entries()).map(([key, value]) => `  ${key}: ${value}`).join(
     // Contract addresses (critical for PaymentSplitter) - CHECK MULTIPLE NAMES
     contractAddress: getParam(['contractAddress', 'contract_address', 'paymentContract', 'contract']) || '',
     tokenContract: getParam(['tokenContract', 'token_contract', 'tokenAddress', 'token_address']) || '',
-    chainId: getParam(['chainId', 'chain_id', 'networkId', 'network_id']) || '1',
+    // ✅ FIXED: chainId now returned as decimal integer from backend (e.g., 137 instead of "0x89")
+    chainId: parseInt(getParam(['chainId', 'chain_id', 'networkId', 'network_id']) || '1', 10) || 1,
 
     // Payment ID (required for backend communication) - CHECK MULTIPLE NAMES
     paymentId: getParam(['paymentId', 'payment_id', 'splitterPaymentId']) || '',
