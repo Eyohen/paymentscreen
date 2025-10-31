@@ -3,6 +3,10 @@ import { http, fallback } from 'viem';
 import { mainnet, bsc, polygon, arbitrum, optimism, avalanche, celo } from 'wagmi/chains';
 import { injected } from 'wagmi/connectors';
 
+// Alchemy API configuration - Dual keys for failover
+const ALCHEMY_API_KEY_PRIMARY = 'YWG990wOlIikc1tU7-WWTepfU8d1f4dp';
+const ALCHEMY_API_KEY_SECONDARY = 'qtIcCe_-8t4rIWktnWJm0';
+
 // ⭐ ENHANCED Trust Wallet connector - Checks multiple provider locations
 const getTrustWalletProvider = () => {
   console.log('🛡️ [WAGMI CONFIG] Getting Trust Wallet provider...');
@@ -87,8 +91,16 @@ export const config = createConfig({
     injected(), // Generic fallback and Coinbase support
   ],
   transports: {
-    // ⭐ Ethereum Mainnet - Best free public RPCs
+    // ⭐ Ethereum Mainnet - Dual Alchemy keys + public RPCs for maximum reliability
     [mainnet.id]: fallback([
+      http(`https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY_PRIMARY}`, {
+        timeout: 10_000,
+        retryCount: 1,
+      }),
+      http(`https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY_SECONDARY}`, {
+        timeout: 10_000,
+        retryCount: 1,
+      }),
       http('https://cloudflare-eth.com', {
         timeout: 10_000,
         retryCount: 1,
@@ -106,8 +118,16 @@ export const config = createConfig({
         retryCount: 1,
       }),
     ]),
-    // ⭐ BSC - Official endpoints (10K/5min rate limit per endpoint)
+    // ⭐ BSC - Dual Alchemy keys + official endpoints
     [bsc.id]: fallback([
+      http(`https://bnb-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY_PRIMARY}`, {
+        timeout: 10_000,
+        retryCount: 1,
+      }),
+      http(`https://bnb-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY_SECONDARY}`, {
+        timeout: 10_000,
+        retryCount: 1,
+      }),
       http('https://bsc-dataseed.bnbchain.org', {
         timeout: 10_000,
         retryCount: 1,
@@ -125,8 +145,16 @@ export const config = createConfig({
         retryCount: 1,
       }),
     ]),
-    // ⭐ Polygon - Official + reliable free endpoints
+    // ⭐ Polygon - Dual Alchemy keys + public endpoints
     [polygon.id]: fallback([
+      http(`https://polygon-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY_PRIMARY}`, {
+        timeout: 10_000,
+        retryCount: 1,
+      }),
+      http(`https://polygon-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY_SECONDARY}`, {
+        timeout: 10_000,
+        retryCount: 1,
+      }),
       http('https://rpc-mainnet.matic.network', {
         timeout: 10_000,
         retryCount: 1,
@@ -144,8 +172,16 @@ export const config = createConfig({
         retryCount: 1,
       }),
     ]),
-    // ⭐ Arbitrum - Multiple fallback RPCs (removed Ankr)
+    // ⭐ Arbitrum - Dual Alchemy keys + public RPCs
     [arbitrum.id]: fallback([
+      http(`https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY_PRIMARY}`, {
+        timeout: 10_000,
+        retryCount: 1,
+      }),
+      http(`https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY_SECONDARY}`, {
+        timeout: 10_000,
+        retryCount: 1,
+      }),
       http('https://arb1.arbitrum.io/rpc', {
         timeout: 10_000,
         retryCount: 1,
@@ -159,8 +195,16 @@ export const config = createConfig({
         retryCount: 1,
       }),
     ]),
-    // ⭐ Optimism - Multiple fallback RPCs (removed Ankr)
+    // ⭐ Optimism - Dual Alchemy keys + public RPCs
     [optimism.id]: fallback([
+      http(`https://opt-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY_PRIMARY}`, {
+        timeout: 10_000,
+        retryCount: 1,
+      }),
+      http(`https://opt-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY_SECONDARY}`, {
+        timeout: 10_000,
+        retryCount: 1,
+      }),
       http('https://mainnet.optimism.io', {
         timeout: 10_000,
         retryCount: 1,
@@ -174,8 +218,16 @@ export const config = createConfig({
         retryCount: 1,
       }),
     ]),
-    // ⭐ Avalanche - Multiple fallback RPCs (removed Ankr)
+    // ⭐ Avalanche - Dual Alchemy keys + public RPCs
     [avalanche.id]: fallback([
+      http(`https://avax-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY_PRIMARY}`, {
+        timeout: 10_000,
+        retryCount: 1,
+      }),
+      http(`https://avax-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY_SECONDARY}`, {
+        timeout: 10_000,
+        retryCount: 1,
+      }),
       http('https://api.avax.network/ext/bc/C/rpc', {
         timeout: 10_000,
         retryCount: 1,
@@ -189,8 +241,16 @@ export const config = createConfig({
         retryCount: 1,
       }),
     ]),
-    // ⭐ Celo - Multiple fallback RPCs (removed Ankr)
+    // ⭐ Celo - Dual Alchemy keys + public RPCs
     [celo.id]: fallback([
+      http(`https://celo-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY_PRIMARY}`, {
+        timeout: 10_000,
+        retryCount: 1,
+      }),
+      http(`https://celo-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY_SECONDARY}`, {
+        timeout: 10_000,
+        retryCount: 1,
+      }),
       http('https://forno.celo.org', {
         timeout: 10_000,
         retryCount: 1,
