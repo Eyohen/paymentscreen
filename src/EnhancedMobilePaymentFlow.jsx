@@ -1788,18 +1788,20 @@ ${'='.repeat(80)}
   );
 
   const renderLoading = () => (
-    <div className="flex flex-col items-center justify-center p-12">
-      {/* Loading Spinner */}
-      <div className="relative mb-8">
-        <div className="w-16 h-16 rounded-full border-4 border-gray-200"></div>
-        <div className="absolute top-0 left-0 w-16 h-16 rounded-full border-4 border-purple-600 border-t-transparent animate-spin"></div>
+    <div className="p-6">
+      {/* Loading Spinner - small, left-aligned */}
+      <div className="relative w-10 h-10 mb-6">
+        <div className="w-10 h-10 rounded-full border-3 border-gray-200"></div>
+        <div className="absolute top-0 left-0 w-10 h-10 rounded-full border-3 border-purple-600 border-t-transparent animate-spin"></div>
       </div>
 
-      {/* Title */}
-      <h2 className="text-xl font-semibold text-gray-900 mb-2">Loading Payment</h2>
+      {/* Title - left-aligned */}
+      <h2 className="text-lg font-bold text-gray-900 mb-2">Loading Payment</h2>
 
-      {/* Subtitle */}
-      <p className="text-gray-500 text-sm">Validating payment parameters...</p>
+      {/* Subtitle - left-aligned */}
+      <p className="text-gray-500 text-sm leading-relaxed">
+        Validating payment parameters and preparing transaction. Please wait.
+      </p>
     </div>
   );
 
@@ -1838,60 +1840,55 @@ ${'='.repeat(80)}
 
   const renderConfirmation = () => (
     <div className="p-6">
-      {/* Token/Chain Icon */}
-      <div className="flex justify-center mb-6">
-        <div className="relative">
-          {/* Main token circle */}
-          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center shadow-lg">
-            <span className="text-white font-bold text-lg">$</span>
-          </div>
-          {/* Network badge */}
-          <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-purple-600 border-2 border-white flex items-center justify-center shadow">
-            <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
-            </svg>
-          </div>
+      {/* Token/Chain Icons - left-aligned, overlapping */}
+      <div className="flex items-center mb-5">
+        {/* USDT Token Icon */}
+        <div className="w-10 h-10 rounded-full bg-teal-500 flex items-center justify-center z-10">
+          <span className="text-white font-bold text-sm">₮</span>
+        </div>
+        {/* Chain Icon - overlapping */}
+        <div className="w-10 h-10 rounded-full bg-purple-600 flex items-center justify-center -ml-3">
+          <svg className="w-5 h-5 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101" />
+            <path d="M10.172 13.828a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+          </svg>
         </div>
       </div>
 
-      {/* Title */}
-      <h2 className="text-xl font-semibold text-gray-900 mb-6 text-center">Confirm Payment</h2>
+      {/* Title - left-aligned */}
+      <h2 className="text-lg font-bold text-gray-900 mb-6">Confirm Payment</h2>
 
-      {/* Payment Details Card */}
-      <div className="bg-gray-50 rounded-2xl p-5 mb-5">
-        <div className="space-y-4">
-          <div className="flex justify-between items-center">
-            <span className="text-gray-500 text-sm">Total Amount</span>
-            <span className="font-semibold text-gray-900">{paymentData.amount} {paymentData.token}</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-gray-500 text-sm">Merchant</span>
-            <span className="font-medium text-gray-900">{paymentData.merchant}</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-gray-500 text-sm">Network</span>
-            <span className="font-medium text-gray-900">{paymentData.network}</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-gray-500 text-sm">Payment ID</span>
-            <span className="font-mono text-sm text-gray-900">{paymentData.paymentId.slice(0, 8)}...</span>
-          </div>
-          <div className="flex justify-between items-center">
-            <span className="text-gray-500 text-sm">Your Wallet</span>
-            <span className="font-mono text-sm text-gray-900">{address?.slice(0, 6)}...{address?.slice(-4)}</span>
-          </div>
+      {/* Payment Details - simple rows with borders */}
+      <div className="mb-6">
+        <div className="flex justify-between items-center py-3 border-b border-gray-100">
+          <span className="text-gray-500 text-sm">Total Amount</span>
+          <span className="font-semibold text-gray-900 text-sm">{paymentData.amount} {paymentData.token}</span>
+        </div>
+        <div className="flex justify-between items-center py-3 border-b border-gray-100">
+          <span className="text-gray-500 text-sm">Merchant</span>
+          <span className="font-medium text-gray-900 text-sm">{paymentData.merchant}</span>
+        </div>
+        <div className="flex justify-between items-center py-3 border-b border-gray-100">
+          <span className="text-gray-500 text-sm">Network</span>
+          <span className="font-medium text-gray-900 text-sm">{paymentData.network}</span>
+        </div>
+        <div className="flex justify-between items-center py-3 border-b border-gray-100">
+          <span className="text-gray-500 text-sm">Payment ID</span>
+          <span className="font-medium text-gray-900 text-sm">{paymentData.paymentId.slice(0, 8)}...</span>
+        </div>
+        <div className="flex justify-between items-center py-3">
+          <span className="text-gray-500 text-sm">Your Wallet</span>
+          <span className="font-medium text-gray-900 text-sm">{address?.slice(0, 6)}...{address?.slice(-4)}</span>
         </div>
       </div>
 
-      {/* Info Box */}
-      <div className="bg-purple-50 rounded-xl p-4 mb-6">
+      {/* Info Box - yellow/cream background */}
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
         <div className="flex items-start gap-3">
-          <div className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center flex-shrink-0 mt-0.5">
-            <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd"/>
-            </svg>
+          <div className="w-5 h-5 rounded-full border-2 border-amber-400 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <span className="text-amber-600 text-xs font-bold">i</span>
           </div>
-          <p className="text-sm text-purple-700">
+          <p className="text-sm text-amber-800">
             This will execute a split payment transaction. You may need to approve multiple transactions.
           </p>
         </div>
@@ -1901,7 +1898,7 @@ ${'='.repeat(80)}
       <button
         onClick={executePayment}
         disabled={processing}
-        className="w-full bg-purple-600 text-white py-4 px-6 rounded-xl font-semibold hover:bg-purple-700 disabled:opacity-50 transition-colors shadow-lg shadow-purple-200"
+        className="w-full bg-purple-600 text-white py-4 px-6 rounded-2xl font-semibold hover:bg-purple-700 disabled:opacity-50 transition-colors"
       >
         {processing ? `Processing ${transactionStep}...` : 'Confirm Payment'}
       </button>
@@ -1995,48 +1992,47 @@ ${'='.repeat(80)}
 
     return (
       <div className="p-6">
-        {/* Success Checkmark */}
-        <div className="flex justify-center mb-6">
-          <div className="w-20 h-20 rounded-full bg-green-500 flex items-center justify-center shadow-lg shadow-green-200">
-            <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
-            </svg>
-          </div>
+        {/* Success Checkmark - left-aligned */}
+        <div className="w-10 h-10 rounded-full bg-green-500 flex items-center justify-center mb-5">
+          <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
+          </svg>
         </div>
 
-        {/* Title */}
-        <h2 className="text-xl font-semibold text-gray-900 mb-6 text-center">Payment Successful</h2>
+        {/* Title - left-aligned */}
+        <h2 className="text-lg font-bold text-gray-900 mb-2">Payment Successful</h2>
 
-        {/* Payment Details Card */}
-        <div className="bg-gray-50 rounded-2xl p-5 mb-5">
-          <div className="space-y-4">
-            <div className="flex justify-between items-center">
-              <span className="text-gray-500 text-sm">Amount</span>
-              <span className="font-semibold text-gray-900">{paymentData.amount} {paymentData.token}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-500 text-sm">Merchant</span>
-              <span className="font-medium text-gray-900">{paymentData.merchant}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-500 text-sm">Network</span>
-              <span className="font-medium text-gray-900">{paymentData.network}</span>
-            </div>
-            <div className="flex justify-between items-center">
-              <span className="text-gray-500 text-sm">Payment ID</span>
-              <span className="font-mono text-sm text-gray-900">{paymentData.paymentId.slice(0, 8)}...</span>
-            </div>
+        {/* Subtitle - left-aligned */}
+        <p className="text-gray-500 text-sm mb-6">
+          Your split payment has been completed successfully.
+        </p>
+
+        {/* Payment Details - simplified rows with borders */}
+        <div className="mb-6">
+          <div className="flex justify-between items-center py-3 border-b border-gray-100">
+            <span className="text-gray-500 text-sm">Total Amount</span>
+            <span className="font-semibold text-gray-900 text-sm">{paymentData.amount} {paymentData.token}</span>
           </div>
+          <div className="flex justify-between items-center py-3 border-b border-gray-100">
+            <span className="text-gray-500 text-sm">Merchant</span>
+            <span className="font-medium text-gray-900 text-sm">{paymentData.merchant}</span>
+          </div>
+          {transactionHash && (
+            <div className="flex justify-between items-center py-3">
+              <span className="text-gray-500 text-sm">TX</span>
+              <span className="font-medium text-gray-900 text-sm">{formatTransactionHash(transactionHash)}</span>
+            </div>
+          )}
         </div>
 
-        {/* Explorer Link */}
+        {/* Explorer Link - left-aligned */}
         {explorerUrl && (
-          <div className="text-center mb-6">
+          <div className="mb-6">
             <a
               href={explorerUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 text-purple-600 hover:text-purple-700 text-sm font-medium"
+              className="inline-flex items-center gap-1 text-purple-600 hover:text-purple-700 text-sm font-medium"
             >
               <span>View on {explorerName}</span>
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -2049,7 +2045,7 @@ ${'='.repeat(80)}
         {/* Close Button */}
         <button
           onClick={() => window.close()}
-          className="w-full bg-purple-600 text-white py-4 px-6 rounded-xl font-semibold hover:bg-purple-700 transition-colors shadow-lg shadow-purple-200"
+          className="w-full bg-purple-600 text-white py-4 px-6 rounded-2xl font-semibold hover:bg-purple-700 transition-colors"
         >
           Close
         </button>
@@ -2100,15 +2096,22 @@ ${'='.repeat(80)}
         <div className="flex flex-col lg:flex-row gap-4">
           {/* Main Payment Card */}
           <div className="lg:w-1/2">
-            <div className="bg-white rounded-2xl shadow-xl overflow-hidden">
-              {/* Enhanced header */}
-              <div className="bg-gradient-to-r from-purple-600 to-blue-600 text-white p-6 text-center">
-                <h1 className="text-2xl font-bold">Coinley Pay</h1>
-                <p className="text-purple-100 text-sm mt-1">Enhanced Mobile Payment</p>
+            <div className="bg-white rounded-2xl shadow-lg overflow-hidden max-w-sm mx-auto">
+              {/* Header - matches design */}
+              <div className="px-6 py-4 border-b border-gray-100">
+                <div className="flex items-center gap-2">
+                  {/* Coinley Logo Icon */}
+                  <div className="w-8 h-8 rounded-lg bg-gray-100 flex items-center justify-center">
+                    <svg className="w-5 h-5 text-purple-600" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/>
+                    </svg>
+                  </div>
+                  <span className="text-gray-400 text-sm font-medium">Coinley Pay</span>
+                </div>
               </div>
 
               {/* Content */}
-              <div className="min-h-[400px] flex flex-col justify-center">
+              <div className="min-h-[350px]">
                 {currentStep === 'waitingForProvider' && renderWaitingForProvider()}
                 {currentStep === 'providerTimeout' && renderProviderTimeout()}
                 {currentStep === 'loading' && renderLoading()}
@@ -2120,10 +2123,16 @@ ${'='.repeat(80)}
                 {currentStep === 'error' && renderError()}
               </div>
 
-              {/* Enhanced footer */}
-              <div className="text-center text-xs text-gray-500 p-4 border-t">
-                <p>Powered by <span className="text-purple-600 font-semibold">Coinley</span> - Secure Split Payments</p>
-                <p className="mt-1">Mobile-Optimized Experience</p>
+              {/* Footer - matches design */}
+              <div className="px-6 py-4 border-t border-gray-100">
+                <p className="text-center text-xs text-gray-400">
+                  Powered by <span className="text-purple-600 font-medium">Coinley</span> - Multi wallet support
+                  <span className="ml-1 inline-flex items-center justify-center w-4 h-4 rounded-full bg-green-500">
+                    <svg className="w-2.5 h-2.5 text-white" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd"/>
+                    </svg>
+                  </span>
+                </p>
               </div>
             </div>
           </div>
