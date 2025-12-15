@@ -1788,10 +1788,18 @@ ${'='.repeat(80)}
   );
 
   const renderLoading = () => (
-    <div className="text-center p-8">
-      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-purple-600 mx-auto mb-4"></div>
-      <h2 className="text-xl font-bold text-gray-800 mb-2">Loading Payment...</h2>
-      <p className="text-gray-600">Validating payment parameters and preparing transaction</p>
+    <div className="flex flex-col items-center justify-center p-12">
+      {/* Loading Spinner */}
+      <div className="relative mb-8">
+        <div className="w-16 h-16 rounded-full border-4 border-gray-200"></div>
+        <div className="absolute top-0 left-0 w-16 h-16 rounded-full border-4 border-purple-600 border-t-transparent animate-spin"></div>
+      </div>
+
+      {/* Title */}
+      <h2 className="text-xl font-semibold text-gray-900 mb-2">Loading Payment</h2>
+
+      {/* Subtitle */}
+      <p className="text-gray-500 text-sm">Validating payment parameters...</p>
     </div>
   );
 
@@ -1830,44 +1838,73 @@ ${'='.repeat(80)}
 
   const renderConfirmation = () => (
     <div className="p-6">
-      <h2 className="text-xl font-bold text-gray-800 mb-6 text-center">Confirm Payment</h2>
-
-      {/* Enhanced payment details display */}
-      <div className="bg-gray-50 rounded-xl p-4 mb-6">
-        <div className="flex justify-between items-center mb-2">
-          <span className="text-gray-600">Total Amount:</span>
-          <span className="font-semibold text-lg">{paymentData.amount} {paymentData.token}</span>
-        </div>
-        <div className="flex justify-between items-center mb-2">
-          <span className="text-gray-600">Merchant:</span>
-          <span className="font-semibold">{paymentData.merchant}</span>
-        </div>
-        <div className="flex justify-between items-center mb-2">
-          <span className="text-gray-600">Network:</span>
-          <span className="font-semibold">{paymentData.network}</span>
-        </div>
-        <div className="flex justify-between items-center mb-2">
-          <span className="text-gray-600">Payment ID:</span>
-          <span className="font-mono text-sm">{paymentData.paymentId.slice(0, 8)}...</span>
-        </div>
-        <div className="flex justify-between items-center">
-          <span className="text-gray-600">Your Wallet:</span>
-          <span className="font-mono text-sm">{address?.slice(0, 6)}...{address?.slice(-4)}</span>
+      {/* Token/Chain Icon */}
+      <div className="flex justify-center mb-6">
+        <div className="relative">
+          {/* Main token circle */}
+          <div className="w-16 h-16 rounded-full bg-gradient-to-br from-green-400 to-green-600 flex items-center justify-center shadow-lg">
+            <span className="text-white font-bold text-lg">$</span>
+          </div>
+          {/* Network badge */}
+          <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-purple-600 border-2 border-white flex items-center justify-center shadow">
+            <svg className="w-4 h-4 text-white" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+          </div>
         </div>
       </div>
 
-      {/* Enhanced confirmation button */}
+      {/* Title */}
+      <h2 className="text-xl font-semibold text-gray-900 mb-6 text-center">Confirm Payment</h2>
+
+      {/* Payment Details Card */}
+      <div className="bg-gray-50 rounded-2xl p-5 mb-5">
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <span className="text-gray-500 text-sm">Total Amount</span>
+            <span className="font-semibold text-gray-900">{paymentData.amount} {paymentData.token}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-gray-500 text-sm">Merchant</span>
+            <span className="font-medium text-gray-900">{paymentData.merchant}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-gray-500 text-sm">Network</span>
+            <span className="font-medium text-gray-900">{paymentData.network}</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-gray-500 text-sm">Payment ID</span>
+            <span className="font-mono text-sm text-gray-900">{paymentData.paymentId.slice(0, 8)}...</span>
+          </div>
+          <div className="flex justify-between items-center">
+            <span className="text-gray-500 text-sm">Your Wallet</span>
+            <span className="font-mono text-sm text-gray-900">{address?.slice(0, 6)}...{address?.slice(-4)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Info Box */}
+      <div className="bg-purple-50 rounded-xl p-4 mb-6">
+        <div className="flex items-start gap-3">
+          <div className="w-5 h-5 rounded-full bg-purple-600 flex items-center justify-center flex-shrink-0 mt-0.5">
+            <svg className="w-3 h-3 text-white" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clipRule="evenodd"/>
+            </svg>
+          </div>
+          <p className="text-sm text-purple-700">
+            This will execute a split payment transaction. You may need to approve multiple transactions.
+          </p>
+        </div>
+      </div>
+
+      {/* Confirm Button */}
       <button
         onClick={executePayment}
         disabled={processing}
-        className="w-full bg-green-600 text-white py-4 px-6 rounded-xl font-semibold hover:bg-green-700 disabled:opacity-50 transition-colors"
+        className="w-full bg-purple-600 text-white py-4 px-6 rounded-xl font-semibold hover:bg-purple-700 disabled:opacity-50 transition-colors shadow-lg shadow-purple-200"
       >
         {processing ? `Processing ${transactionStep}...` : 'Confirm Payment'}
       </button>
-
-      <p className="text-xs text-gray-500 text-center mt-4">
-        This will execute a split payment transaction. You may need to approve multiple transactions.
-      </p>
     </div>
   );
 
@@ -1957,51 +1994,62 @@ ${'='.repeat(80)}
     const explorerName = getExplorerName(paymentData.network);
 
     return (
-      <div className="text-center p-8">
-        <div className="w-16 h-16 mx-auto bg-green-500 rounded-full flex items-center justify-center mb-4">
-          <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-          </svg>
-        </div>
-        <h2 className="text-xl font-bold text-gray-800 mb-2">Payment Successful!</h2>
-        <p className="text-gray-600 mb-6">Your split payment has been completed successfully</p>
-
-        <div className="bg-green-50 border border-green-200 rounded-xl p-4 mb-6">
-          <p className="text-sm text-green-700 mb-3">
-            {paymentData.amount} {paymentData.token} sent to {paymentData.merchant}
-          </p>
-          {transactionHash && (
-            <>
-              <p className="text-xs text-green-600 font-mono mb-3">
-                TX: {formatTransactionHash(transactionHash)}
-              </p>
-              {explorerUrl && (
-                <a
-                  href={explorerUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-sm font-medium text-purple-600 hover:text-purple-700 transition-colors"
-                >
-                  View on {explorerName}
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    className="h-4 w-4"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    stroke="currentColor"
-                    strokeWidth={2}
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                  </svg>
-                </a>
-              )}
-            </>
-          )}
+      <div className="p-6">
+        {/* Success Checkmark */}
+        <div className="flex justify-center mb-6">
+          <div className="w-20 h-20 rounded-full bg-green-500 flex items-center justify-center shadow-lg shadow-green-200">
+            <svg className="w-10 h-10 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
         </div>
 
+        {/* Title */}
+        <h2 className="text-xl font-semibold text-gray-900 mb-6 text-center">Payment Successful</h2>
+
+        {/* Payment Details Card */}
+        <div className="bg-gray-50 rounded-2xl p-5 mb-5">
+          <div className="space-y-4">
+            <div className="flex justify-between items-center">
+              <span className="text-gray-500 text-sm">Amount</span>
+              <span className="font-semibold text-gray-900">{paymentData.amount} {paymentData.token}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-500 text-sm">Merchant</span>
+              <span className="font-medium text-gray-900">{paymentData.merchant}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-500 text-sm">Network</span>
+              <span className="font-medium text-gray-900">{paymentData.network}</span>
+            </div>
+            <div className="flex justify-between items-center">
+              <span className="text-gray-500 text-sm">Payment ID</span>
+              <span className="font-mono text-sm text-gray-900">{paymentData.paymentId.slice(0, 8)}...</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Explorer Link */}
+        {explorerUrl && (
+          <div className="text-center mb-6">
+            <a
+              href={explorerUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-2 text-purple-600 hover:text-purple-700 text-sm font-medium"
+            >
+              <span>View on {explorerName}</span>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </a>
+          </div>
+        )}
+
+        {/* Close Button */}
         <button
           onClick={() => window.close()}
-          className="w-full bg-purple-600 text-white py-3 px-6 rounded-xl font-semibold hover:bg-purple-700"
+          className="w-full bg-purple-600 text-white py-4 px-6 rounded-xl font-semibold hover:bg-purple-700 transition-colors shadow-lg shadow-purple-200"
         >
           Close
         </button>
