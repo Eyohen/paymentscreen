@@ -1704,7 +1704,8 @@ ${'='.repeat(80)}
       42161: 'arbitrum',
       10: 'optimism',
       43114: 'avalanche',
-      42220: 'celo'
+      42220: 'celo',
+      8453: 'base'
     };
     return networks[parseInt(chainId)] || 'ethereum';
   };
