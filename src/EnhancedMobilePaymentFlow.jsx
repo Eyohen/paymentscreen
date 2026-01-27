@@ -1767,26 +1767,90 @@ ${'='.repeat(80)}
     </div>
   );
 
-  const renderProviderTimeout = () => (
-    <div className="text-center p-8">
-      <div className="w-16 h-16 mx-auto bg-yellow-500 rounded-full flex items-center justify-center mb-4">
-        <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-        </svg>
+  const renderProviderTimeout = () => {
+    // Generate wallet-specific deep links to open current URL in wallet browser
+    const currentUrl = window.location.href;
+    const urlWithoutProtocol = currentUrl.replace('https://', '');
+
+    const walletLinks = {
+      metamask: `https://metamask.app.link/dapp/${urlWithoutProtocol}`,
+      trust: `https://link.trustwallet.com/open_url?coin_id=60&url=${encodeURIComponent(currentUrl)}`,
+      coinbase: `https://go.cb-w.com/dapp?cb_url=${encodeURIComponent(currentUrl)}`
+    };
+
+    const handleCopyLink = async () => {
+      try {
+        await navigator.clipboard.writeText(currentUrl);
+        alert('Payment link copied! Paste it in your wallet browser.');
+      } catch (err) {
+        // Fallback for browsers that don't support clipboard API
+        const textArea = document.createElement('textarea');
+        textArea.value = currentUrl;
+        document.body.appendChild(textArea);
+        textArea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textArea);
+        alert('Payment link copied! Paste it in your wallet browser.');
+      }
+    };
+
+    return (
+      <div className="text-center p-6">
+        <div className="w-16 h-16 mx-auto bg-yellow-500 rounded-full flex items-center justify-center mb-4">
+          <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+          </svg>
+        </div>
+        <h2 className="text-xl font-bold text-gray-800 mb-2">Open in Wallet App</h2>
+        <p className="text-gray-600 mb-4 text-sm">
+          This page needs to be opened inside your wallet app's browser to process payments.
+        </p>
+
+        {/* Wallet Buttons */}
+        <div className="space-y-3 mb-4">
+          <a
+            href={walletLinks.metamask}
+            className="w-full flex items-center justify-center gap-2 bg-orange-500 text-white py-3 px-6 rounded-xl font-semibold hover:bg-orange-600 transition-colors"
+          >
+            <span>🦊</span> Open in MetaMask
+          </a>
+          <a
+            href={walletLinks.trust}
+            className="w-full flex items-center justify-center gap-2 bg-blue-500 text-white py-3 px-6 rounded-xl font-semibold hover:bg-blue-600 transition-colors"
+          >
+            <span>🛡️</span> Open in Trust Wallet
+          </a>
+          <a
+            href={walletLinks.coinbase}
+            className="w-full flex items-center justify-center gap-2 bg-blue-700 text-white py-3 px-6 rounded-xl font-semibold hover:bg-blue-800 transition-colors"
+          >
+            <span>🔵</span> Open in Coinbase Wallet
+          </a>
+        </div>
+
+        {/* Alternative options */}
+        <div className="border-t border-gray-200 pt-4 mt-4">
+          <p className="text-xs text-gray-500 mb-3">Or copy the link and paste in your wallet browser:</p>
+          <button
+            onClick={handleCopyLink}
+            className="w-full flex items-center justify-center gap-2 bg-gray-100 text-gray-700 py-3 px-6 rounded-xl font-semibold hover:bg-gray-200 transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" />
+            </svg>
+            Copy Payment Link
+          </button>
+        </div>
+
+        <button
+          onClick={() => window.location.reload()}
+          className="w-full mt-4 bg-gray-200 text-gray-600 py-2 px-6 rounded-xl font-medium hover:bg-gray-300 transition-colors text-sm"
+        >
+          Refresh Page
+        </button>
       </div>
-      <h2 className="text-xl font-bold text-gray-800 mb-2">Unable to Connect</h2>
-      <p className="text-gray-600 mb-6">{error}</p>
-      <button
-        onClick={() => window.location.reload()}
-        className="w-full bg-blue-600 text-white py-3 px-6 rounded-xl font-semibold hover:bg-blue-700 transition-colors"
-      >
-        Refresh Page
-      </button>
-      <p className="text-xs text-gray-500 mt-4">
-        Make sure you opened this link in a wallet browser (MetaMask, Trust Wallet, or Coinbase Wallet)
-      </p>
-    </div>
-  );
+    );
+  };
 
   const renderLoading = () => (
     <div className="p-6">
