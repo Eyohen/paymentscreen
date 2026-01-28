@@ -1,6 +1,6 @@
 import { createConfig } from 'wagmi';
 import { http, fallback } from 'viem';
-import { mainnet, bsc, polygon, arbitrum, optimism, avalanche, celo } from 'wagmi/chains';
+import { mainnet, bsc, polygon, arbitrum, optimism, avalanche, celo, base } from 'wagmi/chains';
 import { injected } from 'wagmi/connectors';
 
 // Alchemy API configuration - Dual keys for failover
@@ -84,7 +84,7 @@ const metaMask = () => injected({
 // ✅ IMPROVED: Multiple fallback RPC endpoints for reliability
 // Create wagmi config with mobile-focused wallets only
 export const config = createConfig({
-  chains: [mainnet, bsc, polygon, arbitrum, optimism, avalanche, celo],
+  chains: [mainnet, bsc, polygon, arbitrum, optimism, avalanche, celo, base],
   connectors: [
     trustWallet(),
     metaMask(),
@@ -264,6 +264,29 @@ export const config = createConfig({
         retryCount: 1,
       }),
     ]),
+    // ⭐ Base - Alchemy keys + public RPCs
+    [base.id]: fallback([
+      http(`https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY_PRIMARY}`, {
+        timeout: 10_000,
+        retryCount: 1,
+      }),
+      http(`https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY_SECONDARY}`, {
+        timeout: 10_000,
+        retryCount: 1,
+      }),
+      http('https://mainnet.base.org', {
+        timeout: 10_000,
+        retryCount: 1,
+      }),
+      http('https://base.llamarpc.com', {
+        timeout: 10_000,
+        retryCount: 1,
+      }),
+      http('https://1rpc.io/base', {
+        timeout: 10_000,
+        retryCount: 1,
+      }),
+    ]),
   },
 });
 
@@ -276,6 +299,8 @@ export const networkToChainId = {
   'Optimism': optimism.id,
   'Avalanche': avalanche.id,
   'Celo': celo.id,
+  'Base': base.id,
+  'Base Mainnet': base.id,
 };
 
 // Get chain object by network name
@@ -289,6 +314,7 @@ export const getChainByNetwork = (networkName) => {
     case optimism.id: return optimism;
     case avalanche.id: return avalanche;
     case celo.id: return celo;
+    case base.id: return base;
     default: return mainnet;
   }
 };
