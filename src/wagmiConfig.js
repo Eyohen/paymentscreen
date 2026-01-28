@@ -1,7 +1,20 @@
 import { createConfig } from 'wagmi';
-import { http, fallback } from 'viem';
+import { http, fallback, defineChain } from 'viem';
 import { mainnet, bsc, polygon, arbitrum, optimism, avalanche, celo, base } from 'wagmi/chains';
 import { injected } from 'wagmi/connectors';
+
+// Define Monad chain (not in wagmi core yet)
+const monad = defineChain({
+  id: 143,
+  name: 'Monad',
+  nativeCurrency: { name: 'Monad', symbol: 'MON', decimals: 18 },
+  rpcUrls: {
+    default: { http: ['https://monad-mainnet.g.alchemy.com/v2/YWG990wOlIikc1tU7-WWTepfU8d1f4dp'] },
+  },
+  blockExplorers: {
+    default: { name: 'Monad Explorer', url: 'https://monadvision.com' },
+  },
+});
 
 // Alchemy API configuration - Dual keys for failover
 const ALCHEMY_API_KEY_PRIMARY = 'YWG990wOlIikc1tU7-WWTepfU8d1f4dp';
@@ -84,7 +97,7 @@ const metaMask = () => injected({
 // ✅ IMPROVED: Multiple fallback RPC endpoints for reliability
 // Create wagmi config with mobile-focused wallets only
 export const config = createConfig({
-  chains: [mainnet, bsc, polygon, arbitrum, optimism, avalanche, celo, base],
+  chains: [mainnet, bsc, polygon, arbitrum, optimism, avalanche, celo, base, monad],
   connectors: [
     trustWallet(),
     metaMask(),
@@ -287,6 +300,13 @@ export const config = createConfig({
         retryCount: 1,
       }),
     ]),
+    // Monad - Alchemy RPC
+    [monad.id]: fallback([
+      http(`https://monad-mainnet.g.alchemy.com/v2/${ALCHEMY_API_KEY_PRIMARY}`, {
+        timeout: 10_000,
+        retryCount: 1,
+      }),
+    ]),
   },
 });
 
@@ -301,6 +321,7 @@ export const networkToChainId = {
   'Celo': celo.id,
   'Base': base.id,
   'Base Mainnet': base.id,
+  'Monad': monad.id,
 };
 
 // Get chain object by network name
@@ -315,6 +336,7 @@ export const getChainByNetwork = (networkName) => {
     case avalanche.id: return avalanche;
     case celo.id: return celo;
     case base.id: return base;
+    case monad.id: return monad;
     default: return mainnet;
   }
 };

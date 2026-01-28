@@ -85,7 +85,8 @@ const getNetworkShortName = (chainId) => {
     10: 'optimism',
     43114: 'avalanche',
     42220: 'celo',
-    8453: 'base'
+    8453: 'base',
+    143: 'monad'
   };
   return networks[parseInt(chainId)] || 'ethereum';
 };
