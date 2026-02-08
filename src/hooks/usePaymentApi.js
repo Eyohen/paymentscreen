@@ -5,7 +5,7 @@ import usePaymentStore from '../stores/paymentStore';
 /**
  * API Configuration
  */
-const API_URL = process.env.REACT_APP_COINLEY_API_URL || 'https://talented-mercy-production.up.railway.app';
+const API_URL = process.env.REACT_APP_COINLEY_API_URL || 'https://hub.coinley.io';
 
 /**
  * API Client with error handling

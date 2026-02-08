@@ -29,7 +29,7 @@ REACT_APP_COINLEY_API_KEY="..."
 REACT_APP_COINLEY_API_SECRET="..."
 
 # AFTER (Correct for Vite)
-VITE_COINLEY_API_URL="https://talented-mercy-production.up.railway.app"
+VITE_COINLEY_API_URL="https://hub.coinley.io"
 VITE_COINLEY_API_KEY="afb78ff958350b9067798dd077c28459"
 VITE_COINLEY_API_SECRET="c22d3879eff18c2d3f8f8a61d4097c230a940356a3d139ffceee11ba65b1a34c"
 ```
@@ -169,7 +169,7 @@ https://paymentscreen.vercel.app/?paymentId=<your-payment-id>&preferredWallet=tr
 - Firewall blocking requests
 
 **Solution:**
-1. Test backend directly: `curl https://talented-mercy-production.up.railway.app/api/payments/contract/1`
+1. Test backend directly: `curl https://hub.coinley.io/api/payments/contract/1`
 2. Check Railway logs for backend errors
 3. Verify CORS settings allow `paymentscreen.vercel.app`
 
@@ -193,7 +193,7 @@ https://paymentscreen.vercel.app/?paymentId=<your-payment-id>&preferredWallet=tr
 
 | Variable | Purpose | Required | Default |
 |----------|---------|----------|---------|
-| `VITE_COINLEY_API_URL` | Backend API URL | No | `https://talented-mercy-production.up.railway.app` |
+| `VITE_COINLEY_API_URL` | Backend API URL | No | `https://hub.coinley.io` |
 | `VITE_COINLEY_API_KEY` | Merchant API key | No | `''` (public access) |
 | `VITE_COINLEY_API_SECRET` | Merchant API secret | No | `''` (public access) |
 
