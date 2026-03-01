@@ -16,7 +16,7 @@ const isMobile = () => {
 // Debug mode - only show in development or when explicitly enabled
 const isDebugMode = () => {
   return process.env.NODE_ENV === 'development' ||
-         process.env.REACT_APP_DEBUG_MODE === 'true' ||
+         import.meta.env.VITE_DEBUG_MODE === 'true' ||
          new URLSearchParams(window.location.search).get('debug') === 'true';
 };
 
@@ -94,9 +94,9 @@ const getNetworkShortName = (chainId) => {
 // Helper function to get API credentials from environment variables
 const getApiCredentials = () => {
   return {
-    apiKey: process.env.REACT_APP_COINLEY_API_KEY || '',
-    apiSecret: process.env.REACT_APP_COINLEY_API_SECRET || '',
-    apiUrl: process.env.REACT_APP_COINLEY_API_URL || 'https://hub.coinley.io'
+    apiKey: import.meta.env.VITE_COINLEY_API_KEY || '',
+    apiSecret: import.meta.env.VITE_COINLEY_API_SECRET || '',
+    apiUrl: import.meta.env.VITE_COINLEY_API_URL || 'https://hub.coinley.io'
   };
 };
 

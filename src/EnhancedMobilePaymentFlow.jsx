@@ -1100,7 +1100,7 @@ ${'='.repeat(80)}
               chainId: fetchedPayment.Network?.chainId || fetchedPayment.chainId,
               amount: fetchedPayment.amount,
               token: fetchedPayment.Token?.symbol,
-              merchant: fetchedPayment.Merchant?.businessName,
+              merchant: fetchedPayment.Merchant?.businessName || urlParams.merchant,
               recipient1: fetchedPayment.merchantWallet,
               recipient2: fetchedPayment.coinleyWallet,
               recipient1Percentage: (fetchedPayment.merchantPercentage * 100).toString(),

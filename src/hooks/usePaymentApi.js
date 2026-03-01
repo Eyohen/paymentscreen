@@ -5,7 +5,7 @@ import usePaymentStore from '../stores/paymentStore';
 /**
  * API Configuration
  */
-const API_URL = process.env.REACT_APP_COINLEY_API_URL || 'https://hub.coinley.io';
+const API_URL = import.meta.env.VITE_COINLEY_API_URL || 'https://hub.coinley.io';
 
 /**
  * API Client with error handling
@@ -52,7 +52,8 @@ export const usePaymentDetails = (paymentId) => {
     queryFn: async () => {
       addDebugLog('info', `🔄 Fetching payment details for: ${paymentId}`);
 
-      const data = await apiClient.get(`/api/payments/public/${paymentId}`);
+      const response = await apiClient.get(`/api/payments/public/${paymentId}`);
+      const data = response.payment || response;
 
       addDebugLog('success', '✅ Payment details fetched successfully', {
         paymentId: data.id,
