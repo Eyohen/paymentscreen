@@ -4,6 +4,9 @@ import { readContract, writeContract, simulateContract } from '@wagmi/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { config, getChainByNetwork, networkToChainId } from './wagmiConfig';
 import { parseUnits, erc20Abi } from 'viem';
+import { useSwapPayment } from './hooks/useSwapPayment';
+import TokenSelectionStep from './components/TokenSelectionStep';
+import SwapProgressStep from './components/SwapProgressStep';
 
 // Create a QueryClient instance
 const queryClient = new QueryClient();
@@ -161,6 +164,13 @@ const PaymentFlow = () => {
   // Error logging system for mobile debugging
   const [errorLogs, setErrorLogs] = useState([]);
   const [showErrorPanel, setShowErrorPanel] = useState(false);
+
+  // Swap/bridge payment support
+  const swapPayment = useSwapPayment();
+  const [swapMode, setSwapMode] = useState(false);
+  const [crossChainTokens, setCrossChainTokens] = useState([]);
+  const [loadingCrossChain, setLoadingCrossChain] = useState(false);
+  const [swapProgressMessage, setSwapProgressMessage] = useState('');
 
   // Capture all console errors and add to UI
   useEffect(() => {
@@ -997,6 +1007,20 @@ const PaymentFlow = () => {
         </div>
       )}
 
+          {isConnected && effectiveAddress && (
+            <button
+              onClick={async () => {
+                setSwapMode(true);
+                const targetChainId = parseInt(paymentData.chainId);
+                await swapPayment.discoverTokens(effectiveAddress, targetChainId, parseFloat(paymentData.amount));
+                setCurrentStep('tokenSelection');
+              }}
+              className="text-sm text-purple-600 hover:text-purple-800 underline mb-4 block mx-auto"
+            >
+              Pay with a different token?
+            </button>
+          )}
+
           <p className="text-xs text-gray-500">
             Transaction will be processed automatically once connected
           </p>
@@ -1380,6 +1404,88 @@ const PaymentFlow = () => {
           return <WalletSelectStep />;
         case 'no-wallet':
           return <NoWalletStep />;
+        case 'tokenSelection':
+          return (
+            <TokenSelectionStep
+              tokens={swapPayment.walletTokens}
+              loading={swapPayment.loadingTokens}
+              error={swapPayment.tokenError || swapPayment.swapError}
+              paymentAmount={paymentData.amount}
+              paymentCurrency={paymentData.token}
+              paymentChainId={parseInt(paymentData.chainId)}
+              crossChainTokens={crossChainTokens}
+              loadingCrossChain={loadingCrossChain}
+              onSelectToken={async (token) => {
+                const targetChainId = parseInt(paymentData.chainId);
+                const quote = await swapPayment.selectTokenAndQuote(
+                  token,
+                  targetChainId,
+                  parseFloat(paymentData.amount),
+                  effectiveAddress
+                );
+                if (quote) setCurrentStep('swapConfirm');
+              }}
+              onScanOtherChains={async () => {
+                setLoadingCrossChain(true);
+                const tokens = await swapPayment.discoverCrossChainTokens(
+                  effectiveAddress,
+                  parseFloat(paymentData.amount)
+                );
+                setCrossChainTokens(tokens);
+                setLoadingCrossChain(false);
+              }}
+              onBack={() => {
+                swapPayment.reset();
+                setSwapMode(false);
+                setCurrentStep('approval');
+              }}
+            />
+          );
+        case 'swapConfirm':
+        case 'swapProcessing':
+          return (
+            <SwapProgressStep
+              step={currentStep === 'swapProcessing' ? (swapPayment.swapStep || 'bridging') : 'confirming'}
+              quote={swapPayment.bridgeQuote}
+              selectedToken={swapPayment.selectedToken}
+              paymentAmount={paymentData.amount}
+              paymentCurrency={paymentData.token}
+              estimatedTime={swapPayment.estimatedTime}
+              progressMessage={swapProgressMessage}
+              error={swapPayment.swapError}
+              onConfirm={async () => {
+                setCurrentStep('swapProcessing');
+                const targetChainId = parseInt(paymentData.chainId);
+                const result = await swapPayment.executeSwapPayment({
+                  token: swapPayment.selectedToken,
+                  destChainId: targetChainId,
+                  paymentAmount: parseFloat(paymentData.amount),
+                  existingPaymentId: paymentData.paymentId,
+                  walletAddress: effectiveAddress,
+                  walletClient: null,
+                  apiCredentials: {
+                    apiKey: getApiCredentials().apiKey,
+                    apiSecret: getApiCredentials().apiSecret
+                  },
+                  onProgress: (step, msg) => setSwapProgressMessage(msg)
+                });
+                if (result?.success) {
+                  setPaymentHash(result.transactionHash);
+                  setCurrentStep('success');
+                }
+              }}
+              onChangeToken={() => {
+                swapPayment.setSwapStep('selecting');
+                setCurrentStep('tokenSelection');
+              }}
+              onRetry={async () => {
+                swapPayment.reset();
+                const targetChainId = parseInt(paymentData.chainId);
+                await swapPayment.discoverTokens(effectiveAddress, targetChainId, parseFloat(paymentData.amount));
+                setCurrentStep('tokenSelection');
+              }}
+            />
+          );
         default:
           console.warn('⚠️ Unknown step:', currentStep, '- defaulting to approval');
           return <ApprovalStep />;

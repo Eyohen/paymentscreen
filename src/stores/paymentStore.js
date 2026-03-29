@@ -22,6 +22,13 @@ const usePaymentStore = create(
         isConnected: false,
         connectionAttempts: 0,
 
+        // ==================== SWAP/BRIDGE STATE ====================
+        swapMode: false, // true when paying via swap/bridge instead of direct
+        selectedSwapToken: null, // { symbol, name, balance, usdValue, contractAddress, decimals, chainId }
+        depositPaymentId: null, // deposit payment ID after conversion
+        depositAddress: null, // CREATE2 deposit address
+        bridgeQuote: null, // parsed Relay quote
+
         // ==================== DEBUG/LOGGING STATE ====================
         debugLogs: [],
         showDebugPanel: true,
@@ -36,6 +43,13 @@ const usePaymentStore = create(
         setError: (error) => set({ error, currentStep: error ? 'error' : get().currentStep }),
         setTransactionHash: (hash) => set({ transactionHash: hash }),
         setApprovalHash: (hash) => set({ approvalHash: hash }),
+
+        // Swap/Bridge Actions
+        setSwapMode: (mode) => set({ swapMode: mode }),
+        setSelectedSwapToken: (token) => set({ selectedSwapToken: token }),
+        setDepositPaymentId: (id) => set({ depositPaymentId: id }),
+        setDepositAddress: (addr) => set({ depositAddress: addr }),
+        setBridgeQuote: (quote) => set({ bridgeQuote: quote }),
 
         // Provider Actions
         setDetectedProviders: (providers) => set({ detectedProviders: providers }),
@@ -150,6 +164,11 @@ ${'='.repeat(80)}
           approvalHash: null,
           processing: false,
           error: null,
+          swapMode: false,
+          selectedSwapToken: null,
+          depositPaymentId: null,
+          depositAddress: null,
+          bridgeQuote: null,
           detectedProviders: [],
           selectedProvider: null,
           walletEnv: null,

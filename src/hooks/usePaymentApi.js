@@ -208,6 +208,76 @@ export const useTransactionReceipt = (txHash, provider) => {
 };
 
 /**
+ * Hook: Create a deposit payment (for swap/bridge flow)
+ * Converts an existing pending payment into a deposit payment with a CREATE2 address.
+ */
+export const useCreateDepositPayment = () => {
+  const { addDebugLog } = usePaymentStore();
+
+  return useMutation({
+    mutationFn: async ({ amount, currency, network, existingPaymentId, metadata, apiCredentials }) => {
+      addDebugLog('info', `Creating deposit payment for ${amount} ${currency} on ${network}`);
+
+      const headers = {};
+      if (apiCredentials?.apiKey && apiCredentials?.apiSecret) {
+        headers['X-API-Key'] = apiCredentials.apiKey;
+        headers['X-API-Secret'] = apiCredentials.apiSecret;
+      } else if (apiCredentials?.publicKey) {
+        headers['X-Public-Key'] = apiCredentials.publicKey;
+      }
+
+      const result = await apiClient.post('/api/deposits/create', {
+        amount,
+        currency,
+        network,
+        existingPaymentId,
+        metadata
+      }, headers);
+
+      addDebugLog('success', `Deposit payment created: ${result.payment?.depositAddress}`, {
+        depositAddress: result.payment?.depositAddress,
+        paymentId: result.payment?.id
+      });
+
+      return result;
+    },
+    onError: (error) => {
+      addDebugLog('error', 'Deposit payment creation failed', { error: error.message });
+    }
+  });
+};
+
+/**
+ * Hook: Poll deposit status until funds arrive
+ */
+export const useDepositStatus = (paymentId, enabled = false) => {
+  const { addDebugLog } = usePaymentStore();
+
+  return useQuery({
+    queryKey: queryKeys.depositStatus(paymentId),
+    queryFn: async () => {
+      const data = await apiClient.get(`/api/deposits/status/${paymentId}`);
+      return data;
+    },
+    enabled: !!paymentId && enabled,
+    refetchInterval: (data) => {
+      const status = data?.payment?.status;
+      if (status === 'completed' || status === 'swept' || status === 'failed') {
+        return false; // Stop polling
+      }
+      return 5000; // Poll every 5 seconds
+    },
+    retry: false,
+    onSuccess: (data) => {
+      const status = data?.payment?.status;
+      if (status === 'completed' || status === 'swept') {
+        addDebugLog('success', 'Deposit confirmed on destination chain');
+      }
+    }
+  });
+};
+
+/**
  * Hook: Prefetch payment details
  * Useful for optimistic loading
  *

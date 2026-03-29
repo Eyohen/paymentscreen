@@ -5,6 +5,9 @@ import { parseUnits, erc20Abi } from 'viem';
 import { config } from './wagmiConfig';
 import { formatTransactionHash, getExplorerUrl, getExplorerName } from './utils/formatUtils';
 import { DEBUG_MODE, debugLog, debugError } from './utils/debugUtils';
+import { useSwapPayment } from './hooks/useSwapPayment';
+import TokenSelectionStep from './components/TokenSelectionStep';
+import SwapProgressStep from './components/SwapProgressStep';
 
 // ✅ CRITICAL: Add global BigInt serialization support to prevent JSON errors
 if (typeof BigInt.prototype.toJSON === 'undefined') {
@@ -649,11 +652,17 @@ const EnhancedMobilePaymentFlow = () => {
   const [showDebugPanel, setShowDebugPanel] = useState(true); // Show debug by default
   const [verifying, setVerifying] = useState(false); // For manual verification
   const [copySuccess, setCopySuccess] = useState(false); // For copy logs feedback
+  const [swapMode, setSwapMode] = useState(false);
+  const [crossChainTokens, setCrossChainTokens] = useState([]);
+  const [loadingCrossChain, setLoadingCrossChain] = useState(false);
+  const [swapProgressMessage, setSwapProgressMessage] = useState('');
 
   // Wagmi hooks
   const { address, isConnected, chain } = useAccount();
   const { connect, connectors, error: connectError, isPending } = useConnect();
   const { switchChain } = useSwitchChain();
+
+  const swapPayment = useSwapPayment();
 
   // API client
   const api = createApiClient();
@@ -1959,6 +1968,18 @@ ${'='.repeat(80)}
         </div>
       </div>
 
+      {/* Option to pay with a different token */}
+      <button
+        onClick={async () => {
+          setSwapMode(true);
+          setCurrentStep('tokenSelection');
+          swapPayment.discoverTokens(address, parseInt(paymentData?.chainId), parseFloat(paymentData?.amount));
+        }}
+        className="w-full text-center text-sm text-purple-600 hover:text-purple-800 mb-4"
+      >
+        Pay with a different token?
+      </button>
+
       {/* Confirm Button */}
       <button
         onClick={executePayment}
@@ -2177,6 +2198,70 @@ ${'='.repeat(80)}
 
               {/* Content */}
               <div className="min-h-[350px]">
+                {currentStep === 'tokenSelection' && (
+                  <TokenSelectionStep
+                    tokens={swapPayment.walletTokens}
+                    loading={swapPayment.loadingTokens}
+                    error={swapPayment.tokenError}
+                    paymentAmount={paymentData?.amount}
+                    paymentCurrency={paymentData?.token || 'USDC'}
+                    paymentChainId={parseInt(paymentData?.chainId)}
+                    onSelectToken={async (token) => {
+                      const quote = await swapPayment.selectTokenAndQuote(
+                        token,
+                        parseInt(paymentData?.chainId),
+                        parseFloat(paymentData?.amount),
+                        address
+                      );
+                      if (quote) setCurrentStep('swapConfirm');
+                    }}
+                    onScanOtherChains={async () => {
+                      setLoadingCrossChain(true);
+                      const tokens = await swapPayment.discoverCrossChainTokens(address, parseFloat(paymentData?.amount));
+                      setCrossChainTokens(tokens);
+                      setLoadingCrossChain(false);
+                    }}
+                    crossChainTokens={crossChainTokens}
+                    loadingCrossChain={loadingCrossChain}
+                    onBack={() => { swapPayment.reset(); setSwapMode(false); setCurrentStep('confirmation'); }}
+                  />
+                )}
+                {(currentStep === 'swapConfirm' || currentStep === 'swapProcessing') && (
+                  <SwapProgressStep
+                    step={currentStep === 'swapConfirm' ? 'confirming' : swapPayment.swapStep}
+                    quote={swapPayment.bridgeQuote}
+                    selectedToken={swapPayment.selectedToken}
+                    paymentAmount={paymentData?.amount}
+                    paymentCurrency={paymentData?.token || 'USDC'}
+                    estimatedTime={swapPayment.estimatedTime}
+                    progressMessage={swapProgressMessage}
+                    error={swapPayment.swapError}
+                    onConfirm={async () => {
+                      setCurrentStep('swapProcessing');
+                      const result = await swapPayment.executeSwapPayment({
+                        token: swapPayment.selectedToken,
+                        destChainId: parseInt(paymentData?.chainId),
+                        paymentAmount: parseFloat(paymentData?.amount),
+                        existingPaymentId: paymentData?.paymentId,
+                        walletAddress: address,
+                        walletClient: null,
+                        apiCredentials: {
+                          apiKey: import.meta.env.VITE_COINLEY_API_KEY,
+                          apiSecret: import.meta.env.VITE_COINLEY_API_SECRET
+                        },
+                        onProgress: (step, msg) => setSwapProgressMessage(msg)
+                      });
+                      if (result?.success) {
+                        setTransactionHash(result.transactionHash);
+                        setCurrentStep('success');
+                      } else {
+                        setCurrentStep('swapConfirm');
+                      }
+                    }}
+                    onChangeToken={() => setCurrentStep('tokenSelection')}
+                    onRetry={() => setCurrentStep('swapConfirm')}
+                  />
+                )}
                 {currentStep === 'waitingForProvider' && renderWaitingForProvider()}
                 {currentStep === 'providerTimeout' && renderProviderTimeout()}
                 {currentStep === 'loading' && renderLoading()}

@@ -57,6 +57,9 @@ export const queryKeys = {
   paymentDetails: (paymentId) => ['payment', 'details', paymentId],
   paymentStatus: (paymentId) => ['payment', 'status', paymentId],
 
+  // Deposit queries
+  depositStatus: (paymentId) => ['deposit', 'status', paymentId],
+
   // Transaction queries
   transaction: (txHash) => ['transaction', txHash],
   transactionReceipt: (txHash) => ['transaction', 'receipt', txHash],
