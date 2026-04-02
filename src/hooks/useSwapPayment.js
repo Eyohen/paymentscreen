@@ -1,7 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
-import { useRelayBridge } from './useRelayBridge';
+import { useBridge } from './useLifiBridge';
 import { useWalletTokens } from './useWalletTokens';
-import { CHAIN_ID_TO_SHORT_NAME, isStablecoin } from '../config/relayConfig';
+import { CHAIN_ID_TO_SHORT_NAME } from '../config/lifiConfig';
 
 const API_URL = import.meta.env.VITE_COINLEY_API_URL || 'https://hub.coinley.io';
 
@@ -17,10 +17,12 @@ const KNOWN_USDC = {
 
 // Chains that have CREATE2 deposit factories
 const DEPOSIT_SUPPORTED_CHAINS = [8453, 56, 42161, 137, 10, 43114, 143];
+const createDebugId = (prefix = 'swap-screen') =>
+    `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 /**
  * High-level orchestrator hook for swap/bridge payment flow.
- * Coordinates: token discovery → deposit creation → Relay quote → bridge execution → deposit polling.
+ * Coordinates: token discovery → deposit creation → Li.Fi quote → bridge execution → deposit polling.
  */
 export const useSwapPayment = () => {
     const [swapStep, setSwapStep] = useState('idle');
@@ -31,7 +33,7 @@ export const useSwapPayment = () => {
     const [estimatedTime, setEstimatedTime] = useState(null);
     const quoteFetchedAt = useRef(null);
 
-    const relayBridge = useRelayBridge();
+    const bridge = useBridge();
     const { walletTokens, loadingTokens, tokenError, fetchWalletTokens, checkChainBalances, resetWalletTokens } = useWalletTokens();
 
     /**
@@ -89,10 +91,10 @@ export const useSwapPayment = () => {
     }, [checkChainBalances, fetchWalletTokens]);
 
     /**
-     * Select a token and fetch a Relay quote
+     * Select a token and fetch a Li.Fi quote
      */
     const selectTokenAndQuote = useCallback(async (token, destChainId, paymentAmount, walletAddress) => {
-        setSelectedToken(token);
+        setSelectedToken({ ...token, routeStatus: 'unknown' });
         setSwapStep('quoting');
         setSwapError(null);
 
@@ -107,7 +109,7 @@ export const useSwapPayment = () => {
                 ? '0x0000000000000000000000000000000000000000'
                 : token.contractAddress;
 
-            const quote = await relayBridge.getBridgeQuote(
+            const quote = await bridge.getBridgeQuote(
                 originChainId,
                 destChainId,
                 originTokenAddress,
@@ -120,19 +122,22 @@ export const useSwapPayment = () => {
             );
 
             if (!quote) {
+                setSelectedToken(prev => prev?.id === token.id ? { ...prev, routeStatus: 'unsupported' } : prev);
                 throw new Error('No swap route available for this token');
             }
 
+            setSelectedToken(prev => prev?.id === token.id ? { ...prev, routeStatus: 'supported' } : prev);
             setEstimatedTime(quote.estimatedTime);
             quoteFetchedAt.current = Date.now();
             setSwapStep('confirming');
             return quote;
         } catch (e) {
+            setSelectedToken(prev => prev?.id === token.id ? { ...prev, routeStatus: 'unsupported' } : prev);
             setSwapError(e.message);
             setSwapStep('error');
             return null;
         }
-    }, [relayBridge]);
+    }, [bridge]);
 
     /**
      * Create deposit payment on server, get deposit address
@@ -147,6 +152,13 @@ export const useSwapPayment = () => {
                 headers['X-Public-Key'] = apiCredentials.publicKey;
             }
 
+            console.log('[SwapPayment] Creating deposit:', {
+                debugId: metadata.debugId,
+                existingPaymentId,
+                amount,
+                destNetwork,
+                metadata
+            });
             const res = await fetch(`${API_URL}/api/deposits/create`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', ...headers },
@@ -169,6 +181,12 @@ export const useSwapPayment = () => {
                 paymentId: data.payment?.id || existingPaymentId,
                 depositAddress: data.payment?.depositAddress
             };
+            console.log('[SwapPayment] Deposit created:', {
+                debugId: metadata.debugId,
+                paymentId: deposit.paymentId,
+                depositAddress: deposit.depositAddress,
+                status: data.payment?.status
+            });
             setDepositData(deposit);
             return deposit;
         } catch (e) {
@@ -198,9 +216,19 @@ export const useSwapPayment = () => {
         setSwapError(null);
 
         try {
+            const debugId = createDebugId();
             const originChainId = token.chainId || destChainId;
             const destNetwork = CHAIN_ID_TO_SHORT_NAME[destChainId] || 'base';
             const destStablecoinAddress = KNOWN_USDC[destChainId];
+            console.log('[SwapPayment] Starting execution:', {
+                debugId,
+                originChainId,
+                destChainId,
+                destNetwork,
+                token: token.symbol,
+                paymentAmount,
+                existingPaymentId
+            });
 
             // 1. Create deposit payment
             onProgress?.('creating_deposit', 'Setting up payment...');
@@ -210,8 +238,9 @@ export const useSwapPayment = () => {
                 destNetwork,
                 apiCredentials,
                 {
+                    debugId,
                     bridgeFrom: CHAIN_ID_TO_SHORT_NAME[originChainId] || `chain-${originChainId}`,
-                    bridgeProvider: 'relay.link',
+                    bridgeProvider: 'lifi',
                     sourceToken: token.symbol,
                     sourceChainId: originChainId
                 }
@@ -223,7 +252,7 @@ export const useSwapPayment = () => {
                 ? '0x0000000000000000000000000000000000000000'
                 : token.contractAddress;
 
-            const quote = await relayBridge.getBridgeQuote(
+            const quote = await bridge.getBridgeQuote(
                 originChainId,
                 destChainId,
                 originTokenAddress,
@@ -232,7 +261,11 @@ export const useSwapPayment = () => {
                 destStablecoinAddress,
                 'USDC',
                 paymentAmount.toString(),
-                deposit.depositAddress // real recipient
+                deposit.depositAddress,
+                null,
+                null,
+                undefined,
+                debugId
             );
 
             if (!quote) {
@@ -241,7 +274,7 @@ export const useSwapPayment = () => {
 
             // 3. Execute bridge
             onProgress?.('executing', 'Please confirm in your wallet...');
-            const result = await relayBridge.executeBridge(
+            const result = await bridge.executeBridge(
                 quote,
                 walletClient,
                 (step, message) => {
@@ -265,6 +298,14 @@ export const useSwapPayment = () => {
                     if (statusRes.ok) {
                         const statusData = await statusRes.json();
                         const status = statusData?.payment?.status;
+                        console.log('[SwapPayment] Deposit status poll:', {
+                            debugId,
+                            attempt: i + 1,
+                            paymentId: deposit.paymentId,
+                            status,
+                            detectedAt: statusData?.payment?.detectedAt,
+                            depositTxHash: statusData?.payment?.depositTxHash
+                        });
                         if (status === 'completed' || status === 'swept' || statusData?.payment?.detectedAt) {
                             detected = true;
                             break;
@@ -290,7 +331,7 @@ export const useSwapPayment = () => {
             onProgress?.('error', e.message);
             return { success: false, error: e.message };
         }
-    }, [relayBridge, createDeposit]);
+    }, [bridge, createDeposit]);
 
     /**
      * Reset all swap state
@@ -302,9 +343,9 @@ export const useSwapPayment = () => {
         setSwapError(null);
         setEstimatedTime(null);
         quoteFetchedAt.current = null;
-        relayBridge.resetBridge();
+        bridge.resetBridge();
         resetWalletTokens();
-    }, [relayBridge, resetWalletTokens]);
+    }, [bridge, resetWalletTokens]);
 
     return {
         // State
@@ -316,8 +357,8 @@ export const useSwapPayment = () => {
         walletTokens,
         loadingTokens,
         tokenError,
-        bridgeQuote: relayBridge.bridgeQuote,
-        bridgeStatus: relayBridge.bridgeStatus,
+        bridgeQuote: bridge.bridgeQuote,
+        bridgeStatus: bridge.bridgeStatus,
 
         // Actions
         discoverTokens,

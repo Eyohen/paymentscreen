@@ -1,7 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
+import { LIFI_API_URL, LIFI_API_KEY } from '../config/lifiConfig';
 
-// Alchemy chain slug mapping
-// All Alchemy-supported EVM mainnets (from Alchemy Node API docs)
 const ALCHEMY_CHAIN_SLUGS = {
     1: 'eth-mainnet',
     10: 'opt-mainnet',
@@ -44,8 +43,6 @@ const ALCHEMY_CHAIN_SLUGS = {
 };
 
 const ALCHEMY_API_KEY = 'YWG990wOlIikc1tU7-WWTepfU8d1f4dp';
-
-// Verified token lists — Uniswap (curated, all chains) + CoinGecko (broader, per-chain)
 const UNISWAP_TOKEN_LIST_URL = 'https://tokens.uniswap.org';
 const COINGECKO_CHAIN_SLUGS = {
     1: 'ethereum',
@@ -57,99 +54,247 @@ const COINGECKO_CHAIN_SLUGS = {
     43114: 'avalanche',
     42220: 'celo',
 };
+const LIFI_HEADERS = {
+    'Content-Type': 'application/json',
+    ...(LIFI_API_KEY ? { 'x-lifi-api-key': LIFI_API_KEY } : {})
+};
+const TOKEN_LIST_TTL = 10 * 60 * 1000;
 
-/**
- * Hook to fetch verified ERC-20 tokens a wallet holds on a given chain.
- * Uses Alchemy for balances + Uniswap token list for verification/filtering.
- * Only shows tokens that are on the verified list — filters out scam airdrops.
- */
+const formatBalance = (balance) => {
+    if (balance > 1000000) return `${(balance / 1000000).toFixed(1)}M`;
+    if (balance > 1000) return `${(balance / 1000).toFixed(1)}K`;
+    if (balance > 1) return balance.toFixed(2);
+    return balance.toFixed(6);
+};
+
+const isStableSymbol = (symbol) => {
+    const upper = (symbol || '').toUpperCase();
+    return upper === 'USDC' || upper === 'USDT' || upper === 'DAI';
+};
+
+const getNativeInfo = (chainId) => {
+    const nativeSymbols = {
+        1: { symbol: 'ETH', name: 'Ethereum' },
+        10: { symbol: 'ETH', name: 'Ethereum' },
+        56: { symbol: 'BNB', name: 'BNB' },
+        100: { symbol: 'xDAI', name: 'xDAI' },
+        130: { symbol: 'ETH', name: 'Ethereum' },
+        137: { symbol: 'POL', name: 'Polygon' },
+        143: { symbol: 'MON', name: 'Monad' },
+        146: { symbol: 'S', name: 'Sonic' },
+        185: { symbol: 'MINT', name: 'Mint' },
+        204: { symbol: 'BNB', name: 'BNB' },
+        250: { symbol: 'FTM', name: 'Fantom' },
+        324: { symbol: 'ETH', name: 'Ethereum' },
+        480: { symbol: 'ETH', name: 'Ethereum' },
+        592: { symbol: 'ASTR', name: 'Astar' },
+        747: { symbol: 'FLOW', name: 'Flow' },
+        999: { symbol: 'HYPE', name: 'Hyperliquid' },
+        1088: { symbol: 'METIS', name: 'Metis' },
+        1101: { symbol: 'ETH', name: 'Ethereum' },
+        1329: { symbol: 'SEI', name: 'Sei' },
+        1513: { symbol: 'IP', name: 'Story' },
+        1868: { symbol: 'ETH', name: 'Ethereum' },
+        2000: { symbol: 'RON', name: 'Ronin' },
+        2040: { symbol: 'ETH', name: 'MegaETH' },
+        2741: { symbol: 'ETH', name: 'Ethereum' },
+        4078: { symbol: 'USDT0', name: 'Stable' },
+        5000: { symbol: 'MNT', name: 'Mantle' },
+        57073: { symbol: 'ETH', name: 'Ethereum' },
+        59144: { symbol: 'ETH', name: 'Ethereum' },
+        7000: { symbol: 'ZETA', name: 'ZetaChain' },
+        8453: { symbol: 'ETH', name: 'Ethereum' },
+        33139: { symbol: 'APE', name: 'ApeCoin' },
+        42161: { symbol: 'ETH', name: 'Ethereum' },
+        42170: { symbol: 'ETH', name: 'Ethereum' },
+        42220: { symbol: 'CELO', name: 'Celo' },
+        43114: { symbol: 'AVAX', name: 'Avalanche' },
+        80094: { symbol: 'BERA', name: 'Berachain' },
+        81457: { symbol: 'ETH', name: 'Ethereum' },
+        534352: { symbol: 'ETH', name: 'Ethereum' },
+    };
+    return nativeSymbols[chainId] || { symbol: 'ETH', name: 'Native Token' };
+};
+
+const buildTokenEntry = ({
+    id,
+    symbol,
+    name,
+    contractAddress,
+    decimals,
+    balance,
+    logo,
+    metadataSource = 'fallback',
+    usdValue,
+    usdPrice
+}) => {
+    if (!symbol || !name || balance <= 0) return null;
+
+    const stable = isStableSymbol(symbol);
+    return {
+        id,
+        symbol,
+        name,
+        contractAddress,
+        decimals,
+        balance,
+        balanceFormatted: formatBalance(balance),
+        logo: logo || null,
+        isSwapToken: !stable,
+        isWalletToken: true,
+        isStablecoin: stable,
+        metadataSource,
+        routeStatus: 'unknown',
+        ...(usdValue !== undefined ? { usdValue } : {}),
+        ...(usdPrice !== undefined ? { usdPrice } : {})
+    };
+};
+
 export const useWalletTokens = () => {
     const [walletTokens, setWalletTokens] = useState([]);
     const [loadingTokens, setLoadingTokens] = useState(false);
     const [tokenError, setTokenError] = useState(null);
     const balanceCache = useRef({});
-    const tokenListCache = useRef(null);
-    const tokenListCacheTime = useRef(0);
-    const TOKEN_LIST_TTL = 10 * 60 * 1000; // 10 min cache for token list
+    const fallbackListCache = useRef({});
+    const fallbackListCacheTime = useRef({});
+    const lifiTokenCache = useRef({});
+    const lifiTokenCacheTime = useRef({});
 
-    /**
-     * Fetch and cache verified token lists (Uniswap + CoinGecko).
-     * Uniswap list covers all chains. CoinGecko fetched per-chain for broader coverage.
-     */
-    const getVerifiedTokenList = async (chainId) => {
-        const cacheKey = `list-${chainId}`;
-        if (tokenListCache.current?.[cacheKey] && (Date.now() - tokenListCacheTime.current) < TOKEN_LIST_TTL) {
-            return tokenListCache.current[cacheKey];
+    const getFallbackTokenList = useCallback(async (chainId) => {
+        const cacheKey = `fallback-${chainId}`;
+        if (
+            fallbackListCache.current[cacheKey] &&
+            fallbackListCacheTime.current[cacheKey] &&
+            (Date.now() - fallbackListCacheTime.current[cacheKey]) < TOKEN_LIST_TTL
+        ) {
+            return fallbackListCache.current[cacheKey];
         }
 
         const lookup = {};
 
         try {
-            // Source 1: Uniswap (curated, all chains)
-            const uniRes = await fetch(UNISWAP_TOKEN_LIST_URL, {
-                signal: AbortSignal.timeout(10000)
-            });
+            const uniRes = await fetch(UNISWAP_TOKEN_LIST_URL, { signal: AbortSignal.timeout(10000) });
             const uniData = await uniRes.json();
-            for (const t of (uniData.tokens || [])) {
-                if (t.chainId === chainId) {
-                    const key = `${t.chainId}:${t.address.toLowerCase()}`;
-                    lookup[key] = {
-                        symbol: t.symbol,
-                        name: t.name,
-                        decimals: t.decimals,
-                        logoURI: t.logoURI,
-                        address: t.address,
-                        chainId: t.chainId,
-                    };
-                }
+            for (const token of (uniData.tokens || [])) {
+                if (token.chainId !== chainId) continue;
+                lookup[`${token.chainId}:${token.address.toLowerCase()}`] = {
+                    symbol: token.symbol,
+                    name: token.name,
+                    decimals: token.decimals,
+                    logoURI: token.logoURI,
+                    address: token.address,
+                    chainId: token.chainId,
+                };
             }
-        } catch (e) {
-            console.warn('[WalletTokens] Uniswap list fetch failed:', e.message);
+        } catch (error) {
+            console.warn('[WalletTokens] Uniswap list fetch failed:', error.message);
         }
 
         try {
-            // Source 2: CoinGecko (broader coverage, per-chain)
             const cgSlug = COINGECKO_CHAIN_SLUGS[chainId];
             if (cgSlug) {
                 const cgRes = await fetch(`https://tokens.coingecko.com/${cgSlug}/all.json`, {
                     signal: AbortSignal.timeout(10000)
                 });
                 const cgData = await cgRes.json();
-                for (const t of (cgData.tokens || [])) {
-                    const key = `${t.chainId}:${t.address.toLowerCase()}`;
-                    if (!lookup[key]) { // Don't overwrite Uniswap entries (better logos)
+                for (const token of (cgData.tokens || [])) {
+                    const key = `${token.chainId}:${token.address.toLowerCase()}`;
+                    if (!lookup[key]) {
                         lookup[key] = {
-                            symbol: t.symbol,
-                            name: t.name,
-                            decimals: t.decimals,
-                            logoURI: t.logoURI,
-                            address: t.address,
-                            chainId: t.chainId,
+                            symbol: token.symbol,
+                            name: token.name,
+                            decimals: token.decimals,
+                            logoURI: token.logoURI,
+                            address: token.address,
+                            chainId: token.chainId,
                         };
                     }
                 }
             }
-        } catch (e) {
-            console.warn('[WalletTokens] CoinGecko list fetch failed:', e.message);
+        } catch (error) {
+            console.warn('[WalletTokens] CoinGecko list fetch failed:', error.message);
         }
 
-        if (!tokenListCache.current) tokenListCache.current = {};
-        tokenListCache.current[cacheKey] = lookup;
-        tokenListCacheTime.current = Date.now();
-        console.log(`[WalletTokens] Loaded ${Object.keys(lookup).length} verified tokens for chain ${chainId}`);
+        fallbackListCache.current[cacheKey] = lookup;
+        fallbackListCacheTime.current[cacheKey] = Date.now();
+        console.log(`[WalletTokens] Loaded ${Object.keys(lookup).length} fallback tokens for chain ${chainId}`);
         return lookup;
-    };
+    }, []);
 
-    /**
-     * Fetch verified tokens the wallet holds on a specific chain.
-     */
+    const getLiFiTokenCatalog = useCallback(async (chainId) => {
+        const cacheKey = `EVM-${chainId}`;
+        if (
+            lifiTokenCache.current[cacheKey] &&
+            lifiTokenCacheTime.current[cacheKey] &&
+            (Date.now() - lifiTokenCacheTime.current[cacheKey]) < TOKEN_LIST_TTL
+        ) {
+            return lifiTokenCache.current[cacheKey];
+        }
+
+        const lookup = {};
+        try {
+            const params = new URLSearchParams({
+                chains: chainId.toString(),
+                chainTypes: 'EVM',
+                minPriceUSD: '0'
+            });
+            const response = await fetch(`${LIFI_API_URL}/tokens?${params.toString()}`, {
+                headers: LIFI_HEADERS,
+                signal: AbortSignal.timeout(15000)
+            });
+            if (!response.ok) {
+                throw new Error(`Li.Fi tokens request failed (${response.status})`);
+            }
+
+            const data = await response.json();
+            const chainTokens = data?.[chainId] || data?.[String(chainId)] || [];
+            for (const token of chainTokens) {
+                if (!token.address) continue;
+                lookup[token.address.toLowerCase()] = token;
+            }
+        } catch (error) {
+            console.warn(`[WalletTokens] Li.Fi catalog fetch failed for chain ${chainId}:`, error.message);
+        }
+
+        lifiTokenCache.current[cacheKey] = lookup;
+        lifiTokenCacheTime.current[cacheKey] = Date.now();
+        console.log(`[WalletTokens] Loaded ${Object.keys(lookup).length} Li.Fi tokens for chain ${chainId}`);
+        return lookup;
+    }, []);
+
+    const fetchLiFiTokenMetadata = useCallback(async (chainId, tokenAddress) => {
+        try {
+            const params = new URLSearchParams({
+                chain: chainId.toString(),
+                token: tokenAddress
+            });
+            const response = await fetch(`${LIFI_API_URL}/token?${params.toString()}`, {
+                headers: LIFI_HEADERS,
+                signal: AbortSignal.timeout(10000)
+            });
+            if (!response.ok) return null;
+
+            const token = await response.json();
+            if (!token?.address) return null;
+
+            const cacheKey = `EVM-${chainId}`;
+            if (!lifiTokenCache.current[cacheKey]) {
+                lifiTokenCache.current[cacheKey] = {};
+            }
+            lifiTokenCache.current[cacheKey][token.address.toLowerCase()] = token;
+            lifiTokenCacheTime.current[cacheKey] = Date.now();
+            return token;
+        } catch {
+            return null;
+        }
+    }, []);
+
     const fetchWalletTokens = useCallback(async (walletAddress, chainId, paymentAmount = 0) => {
         if (!walletAddress || !chainId) {
             setWalletTokens([]);
             return [];
         }
 
-        // Handle hex chainIds
         const numericChainId = typeof chainId === 'string' && chainId.startsWith('0x')
             ? parseInt(chainId, 16)
             : parseInt(chainId, 10);
@@ -172,9 +317,9 @@ export const useWalletTokens = () => {
         setTokenError(null);
 
         try {
-            // Fetch verified token list and wallet balances in parallel
-            const [verifiedList, balancesRes] = await Promise.all([
-                getVerifiedTokenList(numericChainId),
+            const [lifiCatalog, fallbackList, balancesRes] = await Promise.all([
+                getLiFiTokenCatalog(numericChainId),
+                getFallbackTokenList(numericChainId),
                 fetch(`https://${chainSlug}.g.alchemy.com/v2/${ALCHEMY_API_KEY}`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -188,111 +333,152 @@ export const useWalletTokens = () => {
                 }).then(r => r.json())
             ]);
 
-            const tokenBalances = balancesRes.result?.tokenBalances || [];
-            console.log(`[WalletTokens] Alchemy returned ${tokenBalances.length} tokens, checking against verified list`);
-
-            // Filter: non-zero balance AND on verified token list
             const tokens = [];
+            const unresolved = [];
+            const tokenBalances = balancesRes.result?.tokenBalances || [];
+            console.log(`[WalletTokens] Alchemy returned ${tokenBalances.length} tokens, resolving metadata`);
+
             for (const tb of tokenBalances) {
                 if (!tb.tokenBalance || tb.tokenBalance === '0x0' || BigInt(tb.tokenBalance) === 0n) continue;
 
-                const key = `${numericChainId}:${tb.contractAddress.toLowerCase()}`;
-                const verified = verifiedList[key];
-                if (!verified) continue; // Not on verified list — skip (likely scam)
-
-                const decimals = verified.decimals;
+                const addressKey = tb.contractAddress.toLowerCase();
+                const lifiMetadata = lifiCatalog[addressKey];
+                const fallbackMetadata = fallbackList[`${numericChainId}:${addressKey}`];
+                const metadata = lifiMetadata || fallbackMetadata;
+                const decimals = metadata?.decimals || 18;
                 const balance = Number(BigInt(tb.tokenBalance)) / Math.pow(10, decimals);
-                if (balance < 0.001) continue; // Skip dust
 
-                const upperSymbol = verified.symbol.toUpperCase();
-                const isStable = upperSymbol === 'USDC' || upperSymbol === 'USDT' || upperSymbol === 'DAI';
+                if (balance < 0.001) continue;
 
-                tokens.push({
+                if (!metadata) {
+                    unresolved.push({ contractAddress: tb.contractAddress, balance });
+                    continue;
+                }
+
+                const tokenEntry = buildTokenEntry({
                     id: `wallet-${tb.contractAddress}-${numericChainId}`,
-                    symbol: verified.symbol,
-                    name: verified.name,
+                    symbol: metadata.symbol,
+                    name: metadata.name,
                     contractAddress: tb.contractAddress,
                     decimals,
                     balance,
-                    balanceFormatted: balance > 1000000
-                        ? `${(balance / 1000000).toFixed(1)}M`
-                        : balance > 1000
-                            ? `${(balance / 1000).toFixed(1)}K`
-                            : balance > 1
-                                ? balance.toFixed(2)
-                                : balance.toFixed(6),
-                    logo: verified.logoURI || null,
-                    isSwapToken: !isStable,
-                    isWalletToken: true,
+                    logo: metadata.logoURI,
+                    metadataSource: lifiMetadata ? 'lifi' : 'fallback'
                 });
+                if (tokenEntry) tokens.push(tokenEntry);
             }
 
-            tokens.sort((a, b) => b.balance - a.balance);
-
-            // Also check stablecoin balances directly via eth_call
-            // (Alchemy's getTokenBalances sometimes misses them)
-            const stablecoins = [
-                { symbol: 'USDC', name: 'USDC', decimals: 6 },
-                { symbol: 'USDT', name: 'USDT', decimals: 6 },
-            ];
-            for (const stable of stablecoins) {
-                // Find this stablecoin's address from the verified list
-                const listEntry = Object.values(verifiedList).find(
-                    v => v.chainId === numericChainId && v.symbol === stable.symbol
+            if (unresolved.length > 0) {
+                const resolvedMetadata = await Promise.all(
+                    unresolved.map(token => fetchLiFiTokenMetadata(numericChainId, token.contractAddress))
                 );
-                if (!listEntry) continue;
 
-                // Skip if already found via getTokenBalances
-                if (tokens.some(t => t.contractAddress?.toLowerCase() === listEntry.address.toLowerCase())) continue;
+                for (let index = 0; index < unresolved.length; index++) {
+                    const unresolvedToken = unresolved[index];
+                    const metadata = resolvedMetadata[index];
+                    if (!metadata) continue;
 
-                // Direct balanceOf call
+                    const tokenEntry = buildTokenEntry({
+                        id: `wallet-${unresolvedToken.contractAddress}-${numericChainId}`,
+                        symbol: metadata.symbol,
+                        name: metadata.name,
+                        contractAddress: unresolvedToken.contractAddress,
+                        decimals: metadata.decimals || 18,
+                        balance: unresolvedToken.balance,
+                        logo: metadata.logoURI,
+                        metadataSource: 'lifi'
+                    });
+                    if (tokenEntry) tokens.push(tokenEntry);
+                }
+            }
+
+            try {
+                const nativeRes = await fetch(`https://${chainSlug}.g.alchemy.com/v2/${ALCHEMY_API_KEY}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        jsonrpc: '2.0',
+                        id: 1,
+                        method: 'eth_getBalance',
+                        params: [walletAddress, 'latest']
+                    }),
+                    signal: AbortSignal.timeout(5000)
+                }).then(r => r.json());
+
+                const nativeBalance = Number(BigInt(nativeRes.result || '0x0')) / 1e18;
+                if (nativeBalance > 0.0001) {
+                    const native = getNativeInfo(numericChainId);
+                    tokens.push(buildTokenEntry({
+                        id: `native-${numericChainId}`,
+                        symbol: native.symbol,
+                        name: native.name,
+                        contractAddress: 'native',
+                        decimals: 18,
+                        balance: nativeBalance,
+                        metadataSource: 'native'
+                    }));
+                }
+            } catch {}
+
+            const metadataValues = [...Object.values(lifiCatalog), ...Object.values(fallbackList)];
+            const stablecoins = [
+                { symbol: 'USDC', decimals: 6 },
+                { symbol: 'USDT', decimals: 6 },
+            ];
+
+            for (const stable of stablecoins) {
+                const metadata = metadataValues.find(token =>
+                    token.chainId === numericChainId && token.symbol?.toUpperCase() === stable.symbol
+                );
+                if (!metadata?.address) continue;
+                if (tokens.some(token => token.contractAddress?.toLowerCase() === metadata.address.toLowerCase())) continue;
+
                 try {
-                    const paddedAddr = walletAddress.slice(2).toLowerCase().padStart(64, '0');
-                    const callData = `0x70a08231${paddedAddr}`;
+                    const paddedAddress = walletAddress.slice(2).toLowerCase().padStart(64, '0');
+                    const callData = `0x70a08231${paddedAddress}`;
                     const balRes = await fetch(`https://${chainSlug}.g.alchemy.com/v2/${ALCHEMY_API_KEY}`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            jsonrpc: '2.0', id: 1, method: 'eth_call',
-                            params: [{ to: listEntry.address, data: callData }, 'latest']
+                            jsonrpc: '2.0',
+                            id: 1,
+                            method: 'eth_call',
+                            params: [{ to: metadata.address, data: callData }, 'latest']
                         }),
                         signal: AbortSignal.timeout(5000)
                     }).then(r => r.json());
 
-                    const rawBal = BigInt(balRes.result || '0x0');
-                    if (rawBal > 0n) {
-                        const balance = Number(rawBal) / Math.pow(10, stable.decimals);
-                        tokens.push({
-                            id: `wallet-${listEntry.address}-${numericChainId}`,
-                            symbol: stable.symbol,
-                            name: listEntry.name || stable.name,
-                            contractAddress: listEntry.address,
-                            decimals: stable.decimals,
-                            balance,
-                            balanceFormatted: balance.toFixed(2),
-                            logo: listEntry.logoURI || null,
-                            isSwapToken: false,
-                            isWalletToken: true,
-                        });
+                    const rawBalance = BigInt(balRes.result || '0x0');
+                    if (rawBalance <= 0n) continue;
+
+                    const balance = Number(rawBalance) / Math.pow(10, stable.decimals);
+                    const tokenEntry = buildTokenEntry({
+                        id: `wallet-${metadata.address}-${numericChainId}`,
+                        symbol: stable.symbol,
+                        name: metadata.name || stable.symbol,
+                        contractAddress: metadata.address,
+                        decimals: stable.decimals,
+                        balance,
+                        logo: metadata.logoURI,
+                        metadataSource: lifiCatalog[metadata.address.toLowerCase()] ? 'lifi' : 'fallback'
+                    });
+                    if (tokenEntry) {
+                        tokens.push(tokenEntry);
                         console.log(`[WalletTokens] Found ${stable.symbol} via direct call: ${balance}`);
                     }
-                } catch (e) {
-                    // Ignore — just a supplementary check
-                }
+                } catch {}
             }
 
-            // Alchemy Prices API — batch fetch USD prices for all swap tokens
-            const alchemyChainSlug = ALCHEMY_CHAIN_SLUGS[numericChainId];
-            if (alchemyChainSlug) {
-                const swapTokens = tokens.filter(t => t.isSwapToken);
-
-                if (swapTokens.length > 0) {
-                    try {
-                        const priceAddresses = swapTokens.map(t => ({
-                            network: alchemyChainSlug,
-                            address: t.contractAddress
+            if (tokens.length > 0) {
+                try {
+                    const priceAddresses = tokens
+                        .filter(token => token.isSwapToken && token.contractAddress !== 'native')
+                        .map(token => ({
+                            network: chainSlug,
+                            address: token.contractAddress
                         }));
 
+                    if (priceAddresses.length > 0) {
                         const priceRes = await fetch(
                             `https://api.g.alchemy.com/prices/v1/${ALCHEMY_API_KEY}/tokens/by-address`,
                             {
@@ -301,55 +487,39 @@ export const useWalletTokens = () => {
                                 body: JSON.stringify({ addresses: priceAddresses }),
                                 signal: AbortSignal.timeout(10000)
                             }
-                        );
-                        const priceData = await priceRes.json();
-                        let priceCount = 0;
+                        ).then(r => r.json());
 
-                        for (const item of (priceData.data || [])) {
-                            const usdPrice = item.prices?.find(p => p.currency === 'usd');
+                        for (const item of (priceRes.data || [])) {
+                            const usdPrice = item.prices?.find(price => price.currency === 'usd');
                             if (!usdPrice) continue;
-                            priceCount++;
                             const price = parseFloat(usdPrice.value);
-                            const token = tokens.find(t =>
-                                t.contractAddress?.toLowerCase() === item.address?.toLowerCase()
+                            const token = tokens.find(entry =>
+                                entry.contractAddress?.toLowerCase() === item.address?.toLowerCase()
                             );
                             if (token && price > 0) {
                                 token.usdValue = token.balance * price;
                                 token.usdPrice = price;
                             }
                         }
-
-                        console.log(`[WalletTokens] Alchemy prices fetched for ${priceCount}/${swapTokens.length} tokens`);
-
-                        // Filter: hide swap tokens where USD value < payment amount
-                        const filteredTokens = tokens.filter(t => {
-                            if (!t.isSwapToken) return true; // Always keep stablecoins
-                            if (t.usdValue === undefined) return false; // No price = hide
-                            if (paymentAmount > 0) return t.usdValue >= paymentAmount;
-                            return t.usdValue >= 0.10; // Default: hide tokens worth < $0.10
-                        });
-
-                        tokens.length = 0;
-                        tokens.push(...filteredTokens);
-                    } catch (e) {
-                        console.warn('[WalletTokens] Alchemy price fetch failed:', e.message);
-                        // If price fetch fails, keep all tokens (graceful degradation)
                     }
+                } catch (error) {
+                    console.warn('[WalletTokens] Alchemy price fetch failed:', error.message);
                 }
             }
 
-            tokens.sort((a, b) => {
-                // Stablecoins first, then by USD value descending
-                if (!a.isSwapToken && b.isSwapToken) return -1;
-                if (a.isSwapToken && !b.isSwapToken) return 1;
+            const resolvedTokens = tokens.filter(Boolean).sort((a, b) => {
+                const aPinned = a.isStablecoin || a.contractAddress === 'native';
+                const bPinned = b.isStablecoin || b.contractAddress === 'native';
+                if (aPinned && !bPinned) return -1;
+                if (!aPinned && bPinned) return 1;
                 return (b.usdValue || b.balance) - (a.usdValue || a.balance);
             });
 
-            console.log(`[WalletTokens] ${tokens.length} tokens after price filtering (payment: $${paymentAmount})`);
+            console.log(`[WalletTokens] ${resolvedTokens.length} tokens after Li.Fi metadata resolution (payment: $${paymentAmount})`);
 
-            balanceCache.current[cacheKey] = { tokens, time: Date.now() };
-            setWalletTokens(tokens);
-            return tokens;
+            balanceCache.current[cacheKey] = { tokens: resolvedTokens, time: Date.now() };
+            setWalletTokens(resolvedTokens);
+            return resolvedTokens;
         } catch (error) {
             console.warn('[WalletTokens] Failed to fetch:', error.message);
             setTokenError(error.message);
@@ -358,13 +528,8 @@ export const useWalletTokens = () => {
         } finally {
             setLoadingTokens(false);
         }
-    }, []);
+    }, [fetchLiFiTokenMetadata, getFallbackTokenList, getLiFiTokenCatalog]);
 
-    /**
-     * Check which chains the wallet has native token balance on.
-     * Returns a Set of chainIds where balance > 0.
-     * Fast: one eth_getBalance call per chain, all in parallel.
-     */
     const checkChainBalances = useCallback(async (walletAddress, chainIds) => {
         if (!walletAddress || !chainIds || chainIds.length === 0) return new Set();
 
@@ -381,7 +546,8 @@ export const useWalletTokens = () => {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            jsonrpc: '2.0', id: 1,
+                            jsonrpc: '2.0',
+                            id: 1,
                             method: 'eth_getBalance',
                             params: [walletAddress, 'latest']
                         }),
@@ -391,15 +557,14 @@ export const useWalletTokens = () => {
                     const balance = BigInt(res.result || '0x0');
                     return { chainId: numericId, hasBalance: balance > 0n };
                 } catch {
-                    // If check fails, assume chain has balance (don't hide it)
                     return { chainId: numericId, hasBalance: true };
                 }
             })
         );
 
         const chainsWithBalance = new Set();
-        for (const r of results) {
-            if (r.hasBalance) chainsWithBalance.add(r.chainId);
+        for (const result of results) {
+            if (result.hasBalance) chainsWithBalance.add(result.chainId);
         }
         console.log(`[WalletTokens] Chain balance check: ${chainsWithBalance.size}/${chainIds.length} chains have native balance`);
         return chainsWithBalance;

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CHAIN_ID_TO_SHORT_NAME } from '../config/relayConfig';
+import { CHAIN_ID_TO_SHORT_NAME } from '../config/lifiConfig';
 
 /**
  * Token selection step for swap/bridge payments.
