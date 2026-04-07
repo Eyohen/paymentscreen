@@ -49,7 +49,9 @@ export const useBridge = () => {
     ) => {
         setBridgeStatus('quoting');
         setBridgeError(null);
-        setBridgeQuote(null);
+        // Keep the previous quote available during re-quote to prevent
+        // executePayment from seeing null and taking the wrong code path.
+        // The quote is replaced atomically when the new one arrives.
 
         try {
             const resolvedOriginAddress = (!originTokenAddress || originTokenAddress === 'native' || originTokenAddress.length < 10)
@@ -173,6 +175,7 @@ export const useBridge = () => {
             return parsedQuote;
         } catch (error) {
             console.warn('[LiFiBridge] Quote failed:', error.message);
+            setBridgeQuote(null); // Clear stale quote on error to prevent wrong-recipient execution
             setBridgeError(error.message);
             setBridgeStatus('error');
             return null;

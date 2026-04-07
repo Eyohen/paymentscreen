@@ -22,7 +22,6 @@ const ALCHEMY_CHAIN_SLUGS = {
     8453: 'base-mainnet',
     33139: 'apechain-mainnet',
     42161: 'arb-mainnet',
-    42170: 'arbnova-mainnet',
     42220: 'celo-mainnet',
     43114: 'avax-mainnet',
     59144: 'linea-mainnet',
@@ -59,6 +58,7 @@ const LIFI_HEADERS = {
     ...(LIFI_API_KEY ? { 'x-lifi-api-key': LIFI_API_KEY } : {})
 };
 const TOKEN_LIST_TTL = 10 * 60 * 1000;
+const EVM_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
 
 const formatBalance = (balance) => {
     if (balance > 1000000) return `${(balance / 1000000).toFixed(1)}M`;
@@ -70,6 +70,18 @@ const formatBalance = (balance) => {
 const isStableSymbol = (symbol) => {
     const upper = (symbol || '').toUpperCase();
     return upper === 'USDC' || upper === 'USDT' || upper === 'DAI';
+};
+
+const getLiFiChainTokens = (data, chainId) => {
+    if (!data) return [];
+
+    return (
+        data?.tokens?.[chainId] ||
+        data?.tokens?.[String(chainId)] ||
+        data?.[chainId] ||
+        data?.[String(chainId)] ||
+        []
+    );
 };
 
 const getNativeInfo = (chainId) => {
@@ -235,7 +247,6 @@ export const useWalletTokens = () => {
         try {
             const params = new URLSearchParams({
                 chains: chainId.toString(),
-                chainTypes: 'EVM',
                 minPriceUSD: '0'
             });
             const response = await fetch(`${LIFI_API_URL}/tokens?${params.toString()}`, {
@@ -247,7 +258,7 @@ export const useWalletTokens = () => {
             }
 
             const data = await response.json();
-            const chainTokens = data?.[chainId] || data?.[String(chainId)] || [];
+            const chainTokens = getLiFiChainTokens(data, chainId);
             for (const token of chainTokens) {
                 if (!token.address) continue;
                 lookup[token.address.toLowerCase()] = token;
@@ -260,33 +271,6 @@ export const useWalletTokens = () => {
         lifiTokenCacheTime.current[cacheKey] = Date.now();
         console.log(`[WalletTokens] Loaded ${Object.keys(lookup).length} Li.Fi tokens for chain ${chainId}`);
         return lookup;
-    }, []);
-
-    const fetchLiFiTokenMetadata = useCallback(async (chainId, tokenAddress) => {
-        try {
-            const params = new URLSearchParams({
-                chain: chainId.toString(),
-                token: tokenAddress
-            });
-            const response = await fetch(`${LIFI_API_URL}/token?${params.toString()}`, {
-                headers: LIFI_HEADERS,
-                signal: AbortSignal.timeout(10000)
-            });
-            if (!response.ok) return null;
-
-            const token = await response.json();
-            if (!token?.address) return null;
-
-            const cacheKey = `EVM-${chainId}`;
-            if (!lifiTokenCache.current[cacheKey]) {
-                lifiTokenCache.current[cacheKey] = {};
-            }
-            lifiTokenCache.current[cacheKey][token.address.toLowerCase()] = token;
-            lifiTokenCacheTime.current[cacheKey] = Date.now();
-            return token;
-        } catch {
-            return null;
-        }
     }, []);
 
     const fetchWalletTokens = useCallback(async (walletAddress, chainId, paymentAmount = 0) => {
@@ -334,7 +318,6 @@ export const useWalletTokens = () => {
             ]);
 
             const tokens = [];
-            const unresolved = [];
             const tokenBalances = balancesRes.result?.tokenBalances || [];
             console.log(`[WalletTokens] Alchemy returned ${tokenBalances.length} tokens, resolving metadata`);
 
@@ -350,10 +333,7 @@ export const useWalletTokens = () => {
 
                 if (balance < 0.001) continue;
 
-                if (!metadata) {
-                    unresolved.push({ contractAddress: tb.contractAddress, balance });
-                    continue;
-                }
+                if (!metadata) continue;
 
                 const tokenEntry = buildTokenEntry({
                     id: `wallet-${tb.contractAddress}-${numericChainId}`,
@@ -366,30 +346,6 @@ export const useWalletTokens = () => {
                     metadataSource: lifiMetadata ? 'lifi' : 'fallback'
                 });
                 if (tokenEntry) tokens.push(tokenEntry);
-            }
-
-            if (unresolved.length > 0) {
-                const resolvedMetadata = await Promise.all(
-                    unresolved.map(token => fetchLiFiTokenMetadata(numericChainId, token.contractAddress))
-                );
-
-                for (let index = 0; index < unresolved.length; index++) {
-                    const unresolvedToken = unresolved[index];
-                    const metadata = resolvedMetadata[index];
-                    if (!metadata) continue;
-
-                    const tokenEntry = buildTokenEntry({
-                        id: `wallet-${unresolvedToken.contractAddress}-${numericChainId}`,
-                        symbol: metadata.symbol,
-                        name: metadata.name,
-                        contractAddress: unresolvedToken.contractAddress,
-                        decimals: metadata.decimals || 18,
-                        balance: unresolvedToken.balance,
-                        logo: metadata.logoURI,
-                        metadataSource: 'lifi'
-                    });
-                    if (tokenEntry) tokens.push(tokenEntry);
-                }
             }
 
             try {
@@ -473,13 +429,14 @@ export const useWalletTokens = () => {
                 try {
                     const priceAddresses = tokens
                         .filter(token => token.isSwapToken && token.contractAddress !== 'native')
+                        .filter(token => EVM_ADDRESS_REGEX.test(token.contractAddress))
                         .map(token => ({
                             network: chainSlug,
                             address: token.contractAddress
                         }));
 
                     if (priceAddresses.length > 0) {
-                        const priceRes = await fetch(
+                        const priceResponse = await fetch(
                             `https://api.g.alchemy.com/prices/v1/${ALCHEMY_API_KEY}/tokens/by-address`,
                             {
                                 method: 'POST',
@@ -487,7 +444,11 @@ export const useWalletTokens = () => {
                                 body: JSON.stringify({ addresses: priceAddresses }),
                                 signal: AbortSignal.timeout(10000)
                             }
-                        ).then(r => r.json());
+                        );
+                        if (!priceResponse.ok) {
+                            throw new Error(`Alchemy price request failed (${priceResponse.status})`);
+                        }
+                        const priceRes = await priceResponse.json();
 
                         for (const item of (priceRes.data || [])) {
                             const usdPrice = item.prices?.find(price => price.currency === 'usd');
@@ -528,7 +489,7 @@ export const useWalletTokens = () => {
         } finally {
             setLoadingTokens(false);
         }
-    }, [fetchLiFiTokenMetadata, getFallbackTokenList, getLiFiTokenCatalog]);
+    }, [getFallbackTokenList, getLiFiTokenCatalog]);
 
     const checkChainBalances = useCallback(async (walletAddress, chainIds) => {
         if (!walletAddress || !chainIds || chainIds.length === 0) return new Set();
@@ -557,7 +518,7 @@ export const useWalletTokens = () => {
                     const balance = BigInt(res.result || '0x0');
                     return { chainId: numericId, hasBalance: balance > 0n };
                 } catch {
-                    return { chainId: numericId, hasBalance: true };
+                    return { chainId: numericId, hasBalance: false };
                 }
             })
         );
