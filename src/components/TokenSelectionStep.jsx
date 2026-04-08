@@ -120,7 +120,7 @@ const TokenSelectionStep = ({
                 </div>
             ) : tokens.length === 0 ? (
                 <div className="p-4 rounded-xl bg-gray-50 text-center">
-                    <p className="text-sm text-gray-600">No tokens found with sufficient balance</p>
+                    <p className="text-sm text-gray-600">No tokens found on this network</p>
                 </div>
             ) : (
                 <div className="space-y-2">
