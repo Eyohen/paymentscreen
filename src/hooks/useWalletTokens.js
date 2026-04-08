@@ -319,6 +319,7 @@ export const useWalletTokens = () => {
 
             const tokens = [];
             const tokenBalances = balancesRes.result?.tokenBalances || [];
+            const unresolvedBalances = [];
             console.log(`[WalletTokens] Alchemy returned ${tokenBalances.length} tokens, resolving metadata`);
 
             for (const tb of tokenBalances) {
@@ -333,7 +334,10 @@ export const useWalletTokens = () => {
 
                 if (balance < 0.001) continue;
 
-                if (!metadata) continue;
+                if (!metadata) {
+                    unresolvedBalances.push({ contractAddress: tb.contractAddress, rawBalance: tb.tokenBalance });
+                    continue;
+                }
 
                 const tokenEntry = buildTokenEntry({
                     id: `wallet-${tb.contractAddress}-${numericChainId}`,
@@ -346,6 +350,52 @@ export const useWalletTokens = () => {
                     metadataSource: lifiMetadata ? 'lifi' : 'fallback'
                 });
                 if (tokenEntry) tokens.push(tokenEntry);
+            }
+
+            // Fetch on-chain metadata for tokens that Li.Fi and fallback lists missed.
+            // Common on newer chains (Blast, Monad, etc.) with sparse catalog coverage.
+            if (unresolvedBalances.length > 0) {
+                console.log(`[WalletTokens] ${unresolvedBalances.length} tokens missing metadata, fetching from Alchemy`);
+                const metadataResults = await Promise.all(
+                    unresolvedBalances.map(async ({ contractAddress, rawBalance }) => {
+                        try {
+                            const res = await fetch(`https://${chainSlug}.g.alchemy.com/v2/${ALCHEMY_API_KEY}`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    jsonrpc: '2.0', id: 1,
+                                    method: 'alchemy_getTokenMetadata',
+                                    params: [contractAddress]
+                                }),
+                                signal: AbortSignal.timeout(5000)
+                            }).then(r => r.json());
+
+                            const md = res.result;
+                            if (!md?.symbol) return null;
+                            const decimals = md.decimals || 18;
+                            const balance = Number(BigInt(rawBalance)) / Math.pow(10, decimals);
+                            if (balance < 0.001) return null;
+
+                            return buildTokenEntry({
+                                id: `wallet-${contractAddress}-${numericChainId}`,
+                                symbol: md.symbol,
+                                name: md.name || md.symbol,
+                                contractAddress,
+                                decimals,
+                                balance,
+                                logo: md.logo || null,
+                                metadataSource: 'alchemy'
+                            });
+                        } catch {
+                            return null;
+                        }
+                    })
+                );
+                const resolved = metadataResults.filter(Boolean);
+                if (resolved.length > 0) {
+                    console.log(`[WalletTokens] Recovered ${resolved.length} tokens via alchemy_getTokenMetadata`);
+                    tokens.push(...resolved);
+                }
             }
 
             try {
