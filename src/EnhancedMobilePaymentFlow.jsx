@@ -280,6 +280,137 @@ const validatePaymentParameters = (params) => {
   };
 };
 
+const NETWORK_LABELS = {
+  ethereum: 'Ethereum Mainnet',
+  eth: 'Ethereum Mainnet',
+  bsc: 'BNB Smart Chain',
+  binance: 'BNB Smart Chain',
+  polygon: 'Polygon',
+  matic: 'Polygon',
+  arbitrum: 'Arbitrum',
+  optimism: 'Optimism',
+  avalanche: 'Avalanche',
+  avax: 'Avalanche',
+  celo: 'Celo',
+  base: 'Base'
+};
+
+const normalizeText = (value) => {
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+};
+
+const parseChainIdValue = (value) => {
+  if (value === null || value === undefined || value === '') return null;
+  const normalized = String(value).trim();
+  const parsed = typeof value === 'number'
+    ? value
+    : normalized.startsWith('0x')
+      ? parseInt(normalized, 16)
+      : parseInt(normalized, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+};
+
+const deriveNetworkLabel = (networkValue, shortNameValue) => {
+  const explicitNetwork = normalizeText(networkValue);
+  if (explicitNetwork) return explicitNetwork;
+
+  const shortName = normalizeText(shortNameValue).toLowerCase();
+  if (!shortName) return '';
+  return NETWORK_LABELS[shortName] || shortName.charAt(0).toUpperCase() + shortName.slice(1);
+};
+
+const extractBackendSelection = (fetchedPayment = {}) => {
+  const metadata = fetchedPayment.metadata || {};
+  const networkObject = fetchedPayment.Network || fetchedPayment.network || null;
+  const tokenObject = fetchedPayment.Token || fetchedPayment.tokenData || null;
+
+  const networkShortName = normalizeText(
+    networkObject?.shortName ||
+    fetchedPayment.networkShortName ||
+    fetchedPayment.network ||
+    fetchedPayment.currencyNetwork ||
+    metadata.selectedNetwork
+  );
+  const network = deriveNetworkLabel(
+    networkObject?.name || fetchedPayment.networkName || fetchedPayment.networkDisplayName,
+    networkShortName
+  );
+  const chainId = parseChainIdValue(
+    networkObject?.chainId ||
+    fetchedPayment.chainId ||
+    fetchedPayment.networkId ||
+    metadata.chainId
+  );
+
+  const token = normalizeText(
+    tokenObject?.symbol ||
+    fetchedPayment.token ||
+    fetchedPayment.currency ||
+    metadata.selectedToken
+  );
+  const tokenContract = normalizeText(
+    tokenObject?.contractAddress ||
+    fetchedPayment.tokenContract ||
+    fetchedPayment.tokenAddress ||
+    metadata.tokenContract
+  );
+  const tokenDecimals = normalizeText(
+    tokenObject?.decimals ||
+    fetchedPayment.tokenDecimals ||
+    metadata.tokenDecimals
+  );
+
+  return {
+    contractAddress: normalizeText(
+      fetchedPayment.splitterContractAddress ||
+      fetchedPayment.contractAddress ||
+      metadata.contractAddress
+    ),
+    tokenContract,
+    chainId: chainId || '',
+    amount: normalizeText(fetchedPayment.amount),
+    token,
+    merchant: normalizeText(
+      fetchedPayment.Merchant?.businessName ||
+      fetchedPayment.merchant ||
+      fetchedPayment.merchantName
+    ),
+    recipient1: normalizeText(fetchedPayment.merchantWallet || fetchedPayment.recipient1),
+    recipient2: normalizeText(fetchedPayment.coinleyWallet || fetchedPayment.recipient2),
+    recipient1Percentage: fetchedPayment.merchantPercentage !== undefined && fetchedPayment.merchantPercentage !== null
+      ? (Number(fetchedPayment.merchantPercentage) * 100).toString()
+      : '',
+    recipient2Percentage: fetchedPayment.coinleyPercentage !== undefined && fetchedPayment.coinleyPercentage !== null
+      ? (Number(fetchedPayment.coinleyPercentage) * 100).toString()
+      : '',
+    tokenDecimals,
+    network,
+    networkShortName
+  };
+};
+
+const mergePaymentData = (urlParams, fetchedPayment = null) => {
+  const backend = fetchedPayment ? extractBackendSelection(fetchedPayment) : {};
+
+  return {
+    ...urlParams,
+    contractAddress: urlParams.contractAddress || backend.contractAddress || '',
+    tokenContract: urlParams.tokenContract || backend.tokenContract || '',
+    chainId: urlParams.chainId || backend.chainId || '',
+    amount: urlParams.amount || backend.amount || '',
+    token: urlParams.token || backend.token || '',
+    merchant: urlParams.merchant || backend.merchant || 'Demo Merchant',
+    recipient1: urlParams.recipient1 || backend.recipient1 || '',
+    recipient2: urlParams.recipient2 || backend.recipient2 || '',
+    recipient1Percentage: urlParams.recipient1Percentage || backend.recipient1Percentage || '10000',
+    recipient2Percentage: urlParams.recipient2Percentage || backend.recipient2Percentage || '0',
+    tokenDecimals: urlParams.tokenDecimals || backend.tokenDecimals || '',
+    network: urlParams.network || backend.network || '',
+    networkShortName: urlParams.networkShortName || backend.networkShortName || ''
+  };
+};
+
 // Enhanced URL parameter extraction (FLEXIBLE VERSION - handles multiple parameter names)
 const getValidatedUrlParams = () => {
   const params = new URLSearchParams(window.location.search);
@@ -325,18 +456,19 @@ ${Array.from(params.entries()).map(([key, value]) => `  ${key}: ${value}`).join(
   const paymentData = {
     // Basic payment info
     amount: getParam(['amount']) || '',
-    token: getParam(['token']) || 'USDC',
+    token: getParam(['token']) || '',
     merchant: getParam(['merchant']) || 'Demo Merchant',
     productAmount: getParam(['productAmount']) || '',
     platformFee: getParam(['platformFee']) || '0',
     networkFee: getParam(['networkFee']) || '0',
-    network: getParam(['network']) || 'Ethereum Mainnet',
+    network: getParam(['network']) || '',
+    networkShortName: getParam(['networkShortName', 'network_short_name']) || '',
 
     // Contract addresses (critical for PaymentSplitter) - CHECK MULTIPLE NAMES
     contractAddress: getParam(['contractAddress', 'contract_address', 'paymentContract', 'contract']) || '',
     tokenContract: getParam(['tokenContract', 'token_contract', 'tokenAddress', 'token_address']) || '',
     // ✅ FIXED: chainId now returned as decimal integer from backend (e.g., 137 instead of "0x89")
-    chainId: parseInt(getParam(['chainId', 'chain_id', 'networkId', 'network_id']) || '1', 10) || 1,
+    chainId: parseChainIdValue(getParam(['chainId', 'chain_id', 'networkId', 'network_id'])) || '',
 
     // Payment ID (required for backend communication) - CHECK MULTIPLE NAMES
     paymentId: getParam(['paymentId', 'payment_id', 'splitterPaymentId']) || '',
@@ -351,7 +483,7 @@ ${Array.from(params.entries()).map(([key, value]) => `  ${key}: ${value}`).join(
     recipient3Percentage: params.get('recipient3Percentage') || '0',
 
     // Token configuration
-    tokenDecimals: params.get('tokenDecimals') || '6',
+    tokenDecimals: params.get('tokenDecimals') || '',
     amountInWei: params.get('amountInWei') || '',
 
     // Mobile-specific parameters
@@ -1100,23 +1232,11 @@ ${'='.repeat(80)}
           try {
             const api = createApiClient();
             const fetchedPayment = await api.getPaymentDetails(urlParams.paymentId);
+            const enrichedParams = mergePaymentData(urlParams, fetchedPayment);
 
-            // Merge fetched data with URL params
-            const enrichedParams = {
-              ...urlParams,
-              contractAddress: fetchedPayment.splitterContractAddress,
-              tokenContract: fetchedPayment.Token?.contractAddress,
-              chainId: fetchedPayment.Network?.chainId || fetchedPayment.chainId,
-              amount: fetchedPayment.amount,
-              token: fetchedPayment.Token?.symbol,
-              merchant: fetchedPayment.Merchant?.businessName || urlParams.merchant,
-              recipient1: fetchedPayment.merchantWallet,
-              recipient2: fetchedPayment.coinleyWallet,
-              recipient1Percentage: (fetchedPayment.merchantPercentage * 100).toString(),
-              recipient2Percentage: (fetchedPayment.coinleyPercentage * 100).toString(),
-              tokenDecimals: fetchedPayment.Token?.decimals?.toString(),
-              network: fetchedPayment.Network?.name
-            };
+            if (!enrichedParams.chainId || !enrichedParams.network || !enrichedParams.token) {
+              throw new Error('Payment is missing network or token details.');
+            }
 
             addDebugLog('success', '✅ Payment details enriched from backend', enrichedParams);
             setPaymentData(enrichedParams);
@@ -1125,13 +1245,24 @@ ${'='.repeat(80)}
               error: fetchError.message,
               paymentId: urlParams.paymentId
             });
-            // Fallback to URL params if fetch fails
-            setPaymentData(urlParams);
+            const fallbackParams = mergePaymentData(urlParams);
+            if (!fallbackParams.chainId || !fallbackParams.network || !fallbackParams.token) {
+              setError(fetchError.message || 'Payment is missing network or token details.');
+              setCurrentStep('error');
+              return;
+            }
+            setPaymentData(fallbackParams);
           }
         } else {
           // Full params provided in URL (legacy/fallback mode)
           addDebugLog('info', '📋 Full params provided in URL');
-          setPaymentData(urlParams);
+          const mergedParams = mergePaymentData(urlParams);
+          if (!mergedParams.chainId || !mergedParams.network || !mergedParams.token) {
+            setError('Payment is missing network or token details.');
+            setCurrentStep('error');
+            return;
+          }
+          setPaymentData(mergedParams);
         }
 
         addDebugLog('success', '✅ Payment data initialized');

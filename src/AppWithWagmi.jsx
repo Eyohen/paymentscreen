@@ -103,21 +103,171 @@ const getApiCredentials = () => {
   };
 };
 
+const NETWORK_LABELS = {
+  ethereum: 'Ethereum Mainnet',
+  eth: 'Ethereum Mainnet',
+  bsc: 'BNB Smart Chain',
+  binance: 'BNB Smart Chain',
+  polygon: 'Polygon',
+  matic: 'Polygon',
+  arbitrum: 'Arbitrum',
+  optimism: 'Optimism',
+  avalanche: 'Avalanche',
+  avax: 'Avalanche',
+  celo: 'Celo',
+  base: 'Base'
+};
+
+const normalizeText = (value) => {
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+};
+
+const parseChainIdValue = (value) => {
+  if (value === null || value === undefined || value === '') return '';
+  const normalized = String(value).trim();
+  const parsed = typeof value === 'number'
+    ? value
+    : normalized.startsWith('0x')
+      ? parseInt(normalized, 16)
+      : parseInt(normalized, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : '';
+};
+
+const deriveNetworkLabel = (networkValue, shortNameValue) => {
+  const explicitNetwork = normalizeText(networkValue);
+  if (explicitNetwork) return explicitNetwork;
+
+  const shortName = normalizeText(shortNameValue).toLowerCase();
+  if (!shortName) return '';
+  return NETWORK_LABELS[shortName] || shortName.charAt(0).toUpperCase() + shortName.slice(1);
+};
+
+const extractBackendPaymentData = (fetchedPayment = {}) => {
+  const metadata = fetchedPayment.metadata || {};
+  const networkObject = fetchedPayment.Network || fetchedPayment.network || null;
+  const tokenObject = fetchedPayment.Token || fetchedPayment.tokenData || null;
+  const networkShortName = normalizeText(
+    networkObject?.shortName ||
+    fetchedPayment.networkShortName ||
+    fetchedPayment.network ||
+    metadata.selectedNetwork
+  );
+
+  return {
+    amount: normalizeText(fetchedPayment.amount),
+    token: normalizeText(
+      tokenObject?.symbol ||
+      fetchedPayment.token ||
+      fetchedPayment.currency ||
+      metadata.selectedToken
+    ),
+    merchant: normalizeText(
+      fetchedPayment.Merchant?.businessName ||
+      fetchedPayment.merchant ||
+      fetchedPayment.merchantName
+    ),
+    network: deriveNetworkLabel(
+      networkObject?.name || fetchedPayment.networkName || fetchedPayment.networkDisplayName,
+      networkShortName
+    ),
+    networkShortName,
+    contractAddress: normalizeText(
+      fetchedPayment.splitterContractAddress ||
+      fetchedPayment.contractAddress ||
+      metadata.contractAddress
+    ),
+    tokenContract: normalizeText(
+      tokenObject?.contractAddress ||
+      fetchedPayment.tokenContract ||
+      fetchedPayment.tokenAddress ||
+      metadata.tokenContract
+    ),
+    chainId: parseChainIdValue(
+      networkObject?.chainId ||
+      fetchedPayment.chainId ||
+      fetchedPayment.networkId ||
+      metadata.chainId
+    ),
+    recipient1: normalizeText(fetchedPayment.merchantWallet || fetchedPayment.recipient1),
+    recipient2: normalizeText(fetchedPayment.coinleyWallet || fetchedPayment.recipient2),
+    recipient3: normalizeText(fetchedPayment.recipient3),
+    recipient1Percentage: fetchedPayment.merchantPercentage !== undefined && fetchedPayment.merchantPercentage !== null
+      ? (Number(fetchedPayment.merchantPercentage) * 100).toString()
+      : '',
+    recipient2Percentage: fetchedPayment.coinleyPercentage !== undefined && fetchedPayment.coinleyPercentage !== null
+      ? (Number(fetchedPayment.coinleyPercentage) * 100).toString()
+      : '',
+    tokenDecimals: normalizeText(
+      tokenObject?.decimals ||
+      fetchedPayment.tokenDecimals ||
+      metadata.tokenDecimals
+    )
+  };
+};
+
+const mergePaymentData = (urlParams, fetchedPayment = null) => {
+  const backend = fetchedPayment ? extractBackendPaymentData(fetchedPayment) : {};
+
+  return {
+    ...urlParams,
+    amount: urlParams.amount || backend.amount || '',
+    token: urlParams.token || backend.token || '',
+    merchant: urlParams.merchant || backend.merchant || 'Demo Merchant',
+    network: urlParams.network || backend.network || '',
+    networkShortName: urlParams.networkShortName || backend.networkShortName || '',
+    contractAddress: urlParams.contractAddress || backend.contractAddress || '',
+    tokenContract: urlParams.tokenContract || backend.tokenContract || '',
+    chainId: urlParams.chainId || backend.chainId || '',
+    recipient1: urlParams.recipient1 || backend.recipient1 || '',
+    recipient2: urlParams.recipient2 || backend.recipient2 || '',
+    recipient3: urlParams.recipient3 || backend.recipient3 || '0x0000000000000000000000000000000000000000',
+    recipient1Percentage: urlParams.recipient1Percentage || backend.recipient1Percentage || '',
+    recipient2Percentage: urlParams.recipient2Percentage || backend.recipient2Percentage || '',
+    tokenDecimals: urlParams.tokenDecimals || backend.tokenDecimals || ''
+  };
+};
+
+const getPaymentDetails = async (paymentId, apiCredentials) => {
+  const headers = {
+    'Content-Type': 'application/json'
+  };
+
+  if (apiCredentials.apiKey && apiCredentials.apiSecret) {
+    headers['X-API-Key'] = apiCredentials.apiKey;
+    headers['X-API-Secret'] = apiCredentials.apiSecret;
+  }
+
+  const response = await fetch(`${apiCredentials.apiUrl}/api/payments/public/${paymentId}`, {
+    method: 'GET',
+    headers,
+    mode: 'cors'
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch payment details: ${response.status}`);
+  }
+
+  const result = await response.json();
+  return result.payment || result.data || result;
+};
+
 // Helper function to extract URL parameters
 const getUrlParams = () => {
   const params = new URLSearchParams(window.location.search);
   return {
-    amount: params.get('amount') || '99.99',
-    token: params.get('token') || 'USDC',
+    amount: params.get('amount') || '',
+    token: params.get('token') || '',
     merchant: params.get('merchant') || 'Demo Merchant',
-    productAmount: params.get('productAmount') || '95.00',
+    productAmount: params.get('productAmount') || '',
     platformFee: params.get('platformFee') || '2.99',
     networkFee: params.get('networkFee') || '2.00',
     merchantAddress: params.get('merchantAddress') || '',
-    network: params.get('network') || 'Ethereum Mainnet',
+    network: params.get('network') || '',
+    networkShortName: params.get('networkShortName') || '',
     contractAddress: params.get('contractAddress') || '',
     tokenContract: params.get('tokenContract') || '',
-    chainId: params.get('chainId') || '1',
+    chainId: parseChainIdValue(params.get('chainId')),
     // Additional recipient addresses
     platformWallet: params.get('platformWallet') || '',
     networkWallet: params.get('networkWallet') || '',
@@ -131,7 +281,7 @@ const getUrlParams = () => {
     recipient3Percentage: params.get('recipient3Percentage') || '0',
     // Additional backend data
     splitterPaymentId: params.get('splitterPaymentId') || '',
-    tokenDecimals: params.get('tokenDecimals') || '6',
+    tokenDecimals: params.get('tokenDecimals') || '',
     amountInWei: params.get('amountInWei') || '' // Exact amount from backend
   };
 };
@@ -310,6 +460,53 @@ const PaymentFlow = () => {
       console.log('✅ All critical parameters present in QR code');
     }
   }, [paymentData]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const hydratePaymentData = async () => {
+      const initialParams = getUrlParams();
+      const hasMinimalParams = initialParams.paymentId &&
+        !initialParams.contractAddress &&
+        !initialParams.tokenContract;
+
+      if (!hasMinimalParams) {
+        const mergedParams = mergePaymentData(initialParams);
+        if (!mergedParams.chainId || !mergedParams.network || !mergedParams.token) {
+          setWriteError('Payment is missing network or token details.');
+        } else {
+          setPaymentData(mergedParams);
+          setWriteError(null);
+        }
+        return;
+      }
+
+      try {
+        const fetchedPayment = await getPaymentDetails(initialParams.paymentId, getApiCredentials());
+        const mergedParams = mergePaymentData(initialParams, fetchedPayment);
+
+        if (!mergedParams.chainId || !mergedParams.network || !mergedParams.token) {
+          throw new Error('Payment is missing network or token details.');
+        }
+
+        if (!cancelled) {
+          setPaymentData(mergedParams);
+          setWriteError(null);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error('❌ Failed to hydrate payment details:', error);
+          setWriteError(error.message || 'Failed to hydrate payment details.');
+        }
+      }
+    };
+
+    hydratePaymentData();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // Simplified mobile-focused auto-connect
   useEffect(() => {
