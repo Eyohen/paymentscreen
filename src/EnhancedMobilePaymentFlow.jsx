@@ -1413,7 +1413,17 @@ ${'='.repeat(80)}
         }
 
         addDebugLog('success', '✅ Payment data initialized');
-        setCurrentStep('connection');
+        setCurrentStep((previousStep) => {
+          if (previousStep === 'confirmation' || previousStep === 'processing' || previousStep === 'success') {
+            return previousStep;
+          }
+
+          if (isConnected && address) {
+            return 'confirmation';
+          }
+
+          return 'connection';
+        });
       } catch (err) {
         addDebugLog('error', '❌ Failed to initialize payment', {
           error: err.message,
@@ -1425,7 +1435,7 @@ ${'='.repeat(80)}
     };
 
     initializePayment();
-  }, [providerReady, walletEnv]); // Only run after provider is detected
+  }, [providerReady, walletEnv, isConnected, address]); // Only run after provider is detected
 
   // Simplified wallet connection for mobile (based on research findings)
   const connectWallet = useCallback(async () => {
