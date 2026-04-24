@@ -906,7 +906,7 @@ const EnhancedMobilePaymentFlow = () => {
   const [transactionStep, setTransactionStep] = useState('idle'); // approve, splitPayment, processing
   const [connectionAttempts, setConnectionAttempts] = useState(0);
   const [debugLogs, setDebugLogs] = useState([]);
-  const [showDebugPanel, setShowDebugPanel] = useState(true); // Show debug by default
+  const [showDebugPanel, setShowDebugPanel] = useState(DEBUG_MODE);
   const [verifying, setVerifying] = useState(false); // For manual verification
   const [copySuccess, setCopySuccess] = useState(false); // For copy logs feedback
   const [swapMode, setSwapMode] = useState(false);
@@ -2467,6 +2467,93 @@ ${'='.repeat(80)}
     </div>
   );
 
+  const renderMobileDebugPanel = () => (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[85vh] overflow-hidden">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
+          <div>
+            <h3 className="text-base font-semibold text-gray-900">Mobile Debug Console</h3>
+            <p className="text-xs text-gray-500">Copy this and send it back here.</p>
+          </div>
+          <button
+            onClick={() => setShowDebugPanel(false)}
+            className="px-3 py-1.5 bg-gray-900 text-white text-sm rounded-lg"
+          >
+            Close
+          </button>
+        </div>
+
+        <div className="p-4 border-b border-gray-100 bg-gray-50">
+          <div className="grid grid-cols-2 gap-2 text-xs">
+            <div>
+              <span className="text-gray-500">Step:</span>{' '}
+              <span className="font-medium text-gray-900">{currentStep}</span>
+            </div>
+            <div>
+              <span className="text-gray-500">Wallet:</span>{' '}
+              <span className="font-medium text-gray-900">{walletEnv?.walletType || 'unknown'}</span>
+            </div>
+            <div>
+              <span className="text-gray-500">Connected:</span>{' '}
+              <span className="font-medium text-gray-900">{isConnected ? 'yes' : 'no'}</span>
+            </div>
+            <div>
+              <span className="text-gray-500">Chain:</span>{' '}
+              <span className="font-medium text-gray-900">{chain?.id || paymentData?.chainId || 'n/a'}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-4 max-h-[50vh] overflow-y-auto space-y-2">
+          {debugLogs.length === 0 ? (
+            <div className="text-sm text-gray-500 text-center py-8">No logs yet. Actions will appear here.</div>
+          ) : (
+            debugLogs.map(log => (
+              <div key={log.id} className="border border-gray-200 rounded-lg p-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`text-[10px] px-2 py-1 rounded font-semibold ${
+                    log.type === 'error' ? 'bg-red-100 text-red-700' :
+                    log.type === 'success' ? 'bg-green-100 text-green-700' :
+                    log.type === 'warning' ? 'bg-yellow-100 text-yellow-700' :
+                    log.type === 'debug' ? 'bg-blue-100 text-blue-700' :
+                    'bg-gray-100 text-gray-700'
+                  }`}>
+                    {log.type.toUpperCase()}
+                  </span>
+                  <span className="text-[11px] text-gray-500">{log.timestamp}</span>
+                </div>
+                <div className="text-sm text-gray-900 break-words">{log.message}</div>
+                {log.data && (
+                  <details className="mt-2">
+                    <summary className="text-xs text-blue-600 cursor-pointer">View details</summary>
+                    <pre className="mt-2 p-2 bg-gray-50 rounded text-[11px] text-gray-700 overflow-x-auto whitespace-pre-wrap break-words">
+                      {JSON.stringify(log.data, null, 2)}
+                    </pre>
+                  </details>
+                )}
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="flex gap-2 px-4 py-3 border-t border-gray-200">
+          <button
+            onClick={copyLogsToClipboard}
+            className="flex-1 px-3 py-2 bg-blue-600 text-white text-sm rounded-lg"
+          >
+            {copySuccess ? 'Copied' : 'Copy Logs'}
+          </button>
+          <button
+            onClick={() => setDebugLogs([])}
+            className="px-3 py-2 bg-gray-200 text-gray-800 text-sm rounded-lg"
+          >
+            Clear
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
   // Main render
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 p-4">
@@ -2681,6 +2768,20 @@ ${'='.repeat(80)}
           )}
         </div>
       </div>
+
+      <button
+        onClick={() => setShowDebugPanel(true)}
+        className={`fixed bottom-4 right-4 z-40 w-12 h-12 rounded-full shadow-lg flex items-center justify-center text-white font-semibold ${
+          debugLogs.some(log => log.type === 'error') ? 'bg-red-500' :
+          debugLogs.some(log => log.type === 'warning') ? 'bg-yellow-500' :
+          'bg-blue-600'
+        }`}
+        aria-label="Open debug console"
+      >
+        {debugLogs.length > 0 ? debugLogs.length : '🐛'}
+      </button>
+
+      {showDebugPanel && renderMobileDebugPanel()}
     </div>
   );
 };
