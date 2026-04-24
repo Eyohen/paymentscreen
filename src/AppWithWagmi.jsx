@@ -123,6 +123,27 @@ const normalizeText = (value) => {
   return String(value).trim();
 };
 
+const isNumericAmount = (value) => {
+  const normalized = normalizeText(value);
+  return normalized !== '' && /^(\d+(\.\d+)?|\.\d+)$/.test(normalized);
+};
+
+const pickFirstNonEmpty = (...values) => {
+  for (const value of values) {
+    const normalized = normalizeText(value);
+    if (normalized !== '') return normalized;
+  }
+  return '';
+};
+
+const pickFirstNumericAmount = (...values) => {
+  for (const value of values) {
+    const normalized = normalizeText(value);
+    if (isNumericAmount(normalized)) return normalized;
+  }
+  return '';
+};
+
 const parseChainIdValue = (value) => {
   if (value === null || value === undefined || value === '') return '';
   const normalized = String(value).trim();
@@ -147,6 +168,21 @@ const extractBackendPaymentData = (fetchedPayment = {}) => {
   const metadata = fetchedPayment.metadata || {};
   const networkObject = fetchedPayment.Network || fetchedPayment.network || null;
   const tokenObject = fetchedPayment.Token || fetchedPayment.tokenData || null;
+  const amountInWei = pickFirstNonEmpty(
+    fetchedPayment.amountInWei,
+    fetchedPayment.amountWei,
+    fetchedPayment.splitParams?.amount,
+    fetchedPayment.paymentDetails?.amount,
+    metadata.amountInWei
+  );
+  const amount = pickFirstNumericAmount(
+    fetchedPayment.amount,
+    fetchedPayment.totalAmount,
+    fetchedPayment.convertedAmount,
+    fetchedPayment.paymentAmount,
+    metadata.amount,
+    metadata.totalAmount
+  );
   const networkShortName = normalizeText(
     networkObject?.shortName ||
     fetchedPayment.networkShortName ||
@@ -155,7 +191,8 @@ const extractBackendPaymentData = (fetchedPayment = {}) => {
   );
 
   return {
-    amount: normalizeText(fetchedPayment.amount),
+    amount,
+    amountInWei,
     token: normalizeText(
       tokenObject?.symbol ||
       fetchedPayment.token ||
@@ -211,7 +248,8 @@ const mergePaymentData = (urlParams, fetchedPayment = null) => {
 
   return {
     ...urlParams,
-    amount: urlParams.amount || backend.amount || '',
+    amount: pickFirstNumericAmount(urlParams.amount, backend.amount),
+    amountInWei: pickFirstNonEmpty(urlParams.amountInWei, backend.amountInWei),
     token: urlParams.token || backend.token || '',
     merchant: urlParams.merchant || backend.merchant || 'Demo Merchant',
     network: urlParams.network || backend.network || '',
@@ -226,6 +264,22 @@ const mergePaymentData = (urlParams, fetchedPayment = null) => {
     recipient2Percentage: urlParams.recipient2Percentage || backend.recipient2Percentage || '',
     tokenDecimals: urlParams.tokenDecimals || backend.tokenDecimals || ''
   };
+};
+
+const validateResolvedPaymentData = (paymentData) => {
+  if (!paymentData.chainId || !paymentData.network || !paymentData.token) {
+    return 'Payment is missing network or token details.';
+  }
+
+  if (!paymentData.contractAddress || !paymentData.tokenContract) {
+    return 'Payment is missing contract details.';
+  }
+
+  if (!paymentData.amountInWei && !isNumericAmount(paymentData.amount)) {
+    return 'Payment is missing a valid amount.';
+  }
+
+  return null;
 };
 
 const getPaymentDetails = async (paymentId, apiCredentials) => {
@@ -472,8 +526,9 @@ const PaymentFlow = () => {
 
       if (!hasMinimalParams) {
         const mergedParams = mergePaymentData(initialParams);
-        if (!mergedParams.chainId || !mergedParams.network || !mergedParams.token) {
-          setWriteError('Payment is missing network or token details.');
+        const validationError = validateResolvedPaymentData(mergedParams);
+        if (validationError) {
+          setWriteError(validationError);
         } else {
           setPaymentData(mergedParams);
           setWriteError(null);
@@ -485,8 +540,9 @@ const PaymentFlow = () => {
         const fetchedPayment = await getPaymentDetails(initialParams.paymentId, getApiCredentials());
         const mergedParams = mergePaymentData(initialParams, fetchedPayment);
 
-        if (!mergedParams.chainId || !mergedParams.network || !mergedParams.token) {
-          throw new Error('Payment is missing network or token details.');
+        const validationError = validateResolvedPaymentData(mergedParams);
+        if (validationError) {
+          throw new Error(validationError);
         }
 
         if (!cancelled) {
@@ -845,6 +901,17 @@ const PaymentFlow = () => {
       return;
     }
 
+    if (!paymentData.amountInWei && !isNumericAmount(paymentData.amount)) {
+      const errorMsg = 'Cannot execute payment: Payment amount is invalid.';
+      console.error('❌', errorMsg);
+      setWriteError(new Error(errorMsg));
+      setCurrentStep('failure');
+      setProcessing(false);
+      setIsWriting(false);
+      setHasStartedApproval(false);
+      return;
+    }
+
     try {
       console.log('📋 Starting approval and payment with address:', effectiveAddress);
       console.log('📋 Contract addresses verified:', {
@@ -856,8 +923,10 @@ const PaymentFlow = () => {
       setWriteError(null);
 
       // Step 0: Check user's token balance first
-      const decimals = getTokenDecimals(paymentData.token);
-      const amountInUnits = parseUnits(paymentData.amount, decimals);
+      const decimals = parseInt(paymentData.tokenDecimals) || getTokenDecimals(paymentData.token);
+      const amountInUnits = paymentData.amountInWei && paymentData.amountInWei !== ''
+        ? BigInt(paymentData.amountInWei)
+        : parseUnits(paymentData.amount, decimals);
 
       console.log('Step 0: Checking token balance...');
       console.log('Step 0: Using token contract:', paymentData.tokenContract);
@@ -1194,7 +1263,7 @@ const PaymentFlow = () => {
         </div>
         <div className="flex justify-between items-center">
           <span className="text-sm text-gray-600">Amount:</span>
-          <span className="text-sm font-semibold text-purple-700">${paymentData.amount}</span>
+          <span className="text-sm font-semibold text-purple-700">{paymentData.amount || 'Unavailable'}</span>
         </div>
       </div>
 

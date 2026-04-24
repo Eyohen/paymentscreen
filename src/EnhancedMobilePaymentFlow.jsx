@@ -300,6 +300,27 @@ const normalizeText = (value) => {
   return String(value).trim();
 };
 
+const isNumericAmount = (value) => {
+  const normalized = normalizeText(value);
+  return normalized !== '' && /^(\d+(\.\d+)?|\.\d+)$/.test(normalized);
+};
+
+const pickFirstNonEmpty = (...values) => {
+  for (const value of values) {
+    const normalized = normalizeText(value);
+    if (normalized !== '') return normalized;
+  }
+  return '';
+};
+
+const pickFirstNumericAmount = (...values) => {
+  for (const value of values) {
+    const normalized = normalizeText(value);
+    if (isNumericAmount(normalized)) return normalized;
+  }
+  return '';
+};
+
 const parseChainIdValue = (value) => {
   if (value === null || value === undefined || value === '') return null;
   const normalized = String(value).trim();
@@ -324,6 +345,21 @@ const extractBackendSelection = (fetchedPayment = {}) => {
   const metadata = fetchedPayment.metadata || {};
   const networkObject = fetchedPayment.Network || fetchedPayment.network || null;
   const tokenObject = fetchedPayment.Token || fetchedPayment.tokenData || null;
+  const amountInWei = pickFirstNonEmpty(
+    fetchedPayment.amountInWei,
+    fetchedPayment.amountWei,
+    fetchedPayment.splitParams?.amount,
+    fetchedPayment.paymentDetails?.amount,
+    metadata.amountInWei
+  );
+  const amount = pickFirstNumericAmount(
+    fetchedPayment.amount,
+    fetchedPayment.totalAmount,
+    fetchedPayment.convertedAmount,
+    fetchedPayment.paymentAmount,
+    metadata.amount,
+    metadata.totalAmount
+  );
 
   const networkShortName = normalizeText(
     networkObject?.shortName ||
@@ -369,7 +405,8 @@ const extractBackendSelection = (fetchedPayment = {}) => {
     ),
     tokenContract,
     chainId: chainId || '',
-    amount: normalizeText(fetchedPayment.amount),
+    amount,
+    amountInWei,
     token,
     merchant: normalizeText(
       fetchedPayment.Merchant?.businessName ||
@@ -398,7 +435,8 @@ const mergePaymentData = (urlParams, fetchedPayment = null) => {
     contractAddress: urlParams.contractAddress || backend.contractAddress || '',
     tokenContract: urlParams.tokenContract || backend.tokenContract || '',
     chainId: urlParams.chainId || backend.chainId || '',
-    amount: urlParams.amount || backend.amount || '',
+    amount: pickFirstNumericAmount(urlParams.amount, backend.amount),
+    amountInWei: pickFirstNonEmpty(urlParams.amountInWei, backend.amountInWei),
     token: urlParams.token || backend.token || '',
     merchant: urlParams.merchant || backend.merchant || 'Demo Merchant',
     recipient1: urlParams.recipient1 || backend.recipient1 || '',
@@ -409,6 +447,22 @@ const mergePaymentData = (urlParams, fetchedPayment = null) => {
     network: urlParams.network || backend.network || '',
     networkShortName: urlParams.networkShortName || backend.networkShortName || ''
   };
+};
+
+const validateResolvedPaymentData = (paymentData) => {
+  if (!paymentData.chainId || !paymentData.network || !paymentData.token) {
+    return 'Payment is missing network or token details.';
+  }
+
+  if (!paymentData.contractAddress || !paymentData.tokenContract) {
+    return 'Payment is missing contract details.';
+  }
+
+  if (!paymentData.amountInWei && !isNumericAmount(paymentData.amount)) {
+    return 'Payment is missing a valid amount.';
+  }
+
+  return null;
 };
 
 // Enhanced URL parameter extraction (FLEXIBLE VERSION - handles multiple parameter names)
@@ -1234,8 +1288,9 @@ ${'='.repeat(80)}
             const fetchedPayment = await api.getPaymentDetails(urlParams.paymentId);
             const enrichedParams = mergePaymentData(urlParams, fetchedPayment);
 
-            if (!enrichedParams.chainId || !enrichedParams.network || !enrichedParams.token) {
-              throw new Error('Payment is missing network or token details.');
+            const validationError = validateResolvedPaymentData(enrichedParams);
+            if (validationError) {
+              throw new Error(validationError);
             }
 
             addDebugLog('success', '✅ Payment details enriched from backend', enrichedParams);
@@ -1246,8 +1301,9 @@ ${'='.repeat(80)}
               paymentId: urlParams.paymentId
             });
             const fallbackParams = mergePaymentData(urlParams);
-            if (!fallbackParams.chainId || !fallbackParams.network || !fallbackParams.token) {
-              setError(fetchError.message || 'Payment is missing network or token details.');
+            const validationError = validateResolvedPaymentData(fallbackParams);
+            if (validationError) {
+              setError(fetchError.message || validationError);
               setCurrentStep('error');
               return;
             }
@@ -1257,8 +1313,9 @@ ${'='.repeat(80)}
           // Full params provided in URL (legacy/fallback mode)
           addDebugLog('info', '📋 Full params provided in URL');
           const mergedParams = mergePaymentData(urlParams);
-          if (!mergedParams.chainId || !mergedParams.network || !mergedParams.token) {
-            setError('Payment is missing network or token details.');
+          const validationError = validateResolvedPaymentData(mergedParams);
+          if (validationError) {
+            setError(validationError);
             setCurrentStep('error');
             return;
           }
@@ -1513,6 +1570,14 @@ ${'='.repeat(80)}
         chain: chain?.id,
         chainName: chain?.name
       });
+
+      if (!paymentData.contractAddress || !paymentData.tokenContract) {
+        throw new Error('Payment is missing contract details.');
+      }
+
+      if (!paymentData.amountInWei && !isNumericAmount(paymentData.amount)) {
+        throw new Error('Payment amount is invalid.');
+      }
 
       // Get token decimals and amount (using exact backend data)
       const decimals = parseInt(paymentData.tokenDecimals) || 6;
@@ -1812,6 +1877,8 @@ ${'='.repeat(80)}
         errorMessage = 'Transaction was cancelled by user';
       } else if (err.message?.includes('insufficient funds')) {
         errorMessage = 'Insufficient funds for gas fees';
+      } else if (err.message?.includes('Payment amount is invalid') || err.message?.includes('Payment is missing')) {
+        errorMessage = err.message;
       } else if (err.message?.includes('simulation failed')) {
         errorMessage = 'Transaction would fail. Please check your balance and try again.';
       } else if (err.message?.includes('fetch')) {
@@ -2066,8 +2133,12 @@ ${'='.repeat(80)}
       {/* Payment Details - simple rows with borders */}
       <div className="mb-6">
         <div className="flex justify-between items-center py-3 border-b border-gray-100">
-          <span className="text-gray-500 text-sm">Total Amount</span>
-          <span className="font-semibold text-gray-900 text-sm">{paymentData.amount} {paymentData.token}</span>
+          <span className="text-gray-500 text-sm">Amount</span>
+          <span className="font-semibold text-gray-900 text-sm">{paymentData.amount || 'Unavailable'}</span>
+        </div>
+        <div className="flex justify-between items-center py-3 border-b border-gray-100">
+          <span className="text-gray-500 text-sm">Token</span>
+          <span className="font-medium text-gray-900 text-sm">{paymentData.token}</span>
         </div>
         <div className="flex justify-between items-center py-3 border-b border-gray-100">
           <span className="text-gray-500 text-sm">Merchant</span>
