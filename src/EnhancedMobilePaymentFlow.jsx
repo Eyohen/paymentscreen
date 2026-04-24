@@ -295,6 +295,44 @@ const NETWORK_LABELS = {
   base: 'Base'
 };
 
+const KNOWN_TOKEN_CONTRACTS = {
+  1: {
+    USDT: { contractAddress: '0xdAC17F958D2ee523a2206206994597C13D831ec7', decimals: 6 },
+    USDC: { contractAddress: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48', decimals: 6 }
+  },
+  56: {
+    USDT: { contractAddress: '0x55d398326f99059fF775485246999027B3197955', decimals: 18 },
+    USDC: { contractAddress: '0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d', decimals: 18 }
+  },
+  137: {
+    USDT: { contractAddress: '0xc2132D05D31c914a87c6611C10748AEb04B58e8F', decimals: 6 },
+    USDC: { contractAddress: '0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359', decimals: 6 }
+  },
+  42161: {
+    USDT: { contractAddress: '0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9', decimals: 6 },
+    USDC: { contractAddress: '0xaf88d065e77c8cC2239327C5EDb3A432268e5831', decimals: 6 }
+  },
+  10: {
+    USDT: { contractAddress: '0x94b008aA00579c1307B0EF2c499aD98a8ce58e58', decimals: 6 },
+    USDC: { contractAddress: '0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85', decimals: 6 }
+  },
+  43114: {
+    USDT: { contractAddress: '0x9702230A8Ea53601f5cD2dc00fDBc13d4dF4A8c7', decimals: 6 },
+    USDC: { contractAddress: '0xB97EF9Ef8734C71904D8002F8b6Bc66Dd9c48a6E', decimals: 6 }
+  },
+  42220: {
+    USDT: { contractAddress: '0x48065fbBE25f71C9282ddf5e1cD6D6A887483D5e', decimals: 6 },
+    USDC: { contractAddress: '0xcebA9300f2b948710d2653dD7B07f33A8B32118C', decimals: 6 }
+  },
+  8453: {
+    USDT: { contractAddress: '0xfde4C96c8593536E31F229EA8f37b2ADa2699bb2', decimals: 6 },
+    USDC: { contractAddress: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913', decimals: 6 }
+  },
+  143: {
+    USDC: { contractAddress: '0x754704Bc059F8C67012fEd69BC8A327a5aafb603', decimals: 6 }
+  }
+};
+
 const normalizeText = (value) => {
   if (value === null || value === undefined) return '';
   return String(value).trim();
@@ -454,15 +492,48 @@ const validateResolvedPaymentData = (paymentData) => {
     return 'Payment is missing network or token details.';
   }
 
-  if (!paymentData.contractAddress || !paymentData.tokenContract) {
-    return 'Payment is missing contract details.';
-  }
-
   if (!paymentData.amountInWei && !isNumericAmount(paymentData.amount)) {
     return 'Payment is missing a valid amount.';
   }
 
   return null;
+};
+
+const getKnownTokenContract = (chainId, tokenSymbol) => {
+  const numericChainId = parseChainIdValue(chainId);
+  const symbol = normalizeText(tokenSymbol).toUpperCase();
+  if (!numericChainId || !symbol) return null;
+  return KNOWN_TOKEN_CONTRACTS[numericChainId]?.[symbol] || null;
+};
+
+const resolveExecutionContracts = async (paymentData, api, addDebugLog) => {
+  const resolved = { ...paymentData };
+  const tokenFallback = getKnownTokenContract(resolved.chainId, resolved.token);
+
+  if (!resolved.tokenContract && tokenFallback?.contractAddress) {
+    resolved.tokenContract = tokenFallback.contractAddress;
+    resolved.tokenDecimals = resolved.tokenDecimals || String(tokenFallback.decimals);
+    addDebugLog?.('info', '🪙 Token contract resolved from token registry', {
+      source: 'token_registry',
+      token: resolved.token,
+      chainId: resolved.chainId,
+      tokenContract: resolved.tokenContract
+    });
+  }
+
+  if (!resolved.contractAddress && resolved.chainId) {
+    const contractInfo = await api.getContractInfo(parseInt(resolved.chainId, 10));
+    if (contractInfo?.address) {
+      resolved.contractAddress = contractInfo.address;
+      addDebugLog?.('info', '🏗️ Splitter contract resolved from chain registry', {
+        source: 'contract_registry',
+        chainId: resolved.chainId,
+        contractAddress: resolved.contractAddress
+      });
+    }
+  }
+
+  return resolved;
 };
 
 // Enhanced URL parameter extraction (FLEXIBLE VERSION - handles multiple parameter names)
@@ -1286,11 +1357,16 @@ ${'='.repeat(80)}
           try {
             const api = createApiClient();
             const fetchedPayment = await api.getPaymentDetails(urlParams.paymentId);
-            const enrichedParams = mergePaymentData(urlParams, fetchedPayment);
+            const hydratedParams = mergePaymentData(urlParams, fetchedPayment);
+            const enrichedParams = await resolveExecutionContracts(hydratedParams, api, addDebugLog);
 
             const validationError = validateResolvedPaymentData(enrichedParams);
             if (validationError) {
               throw new Error(validationError);
+            }
+
+            if (!enrichedParams.contractAddress || !enrichedParams.tokenContract) {
+              throw new Error('Payment is missing contract details.');
             }
 
             addDebugLog('success', '✅ Payment details enriched from backend', enrichedParams);
@@ -1300,10 +1376,17 @@ ${'='.repeat(80)}
               error: fetchError.message,
               paymentId: urlParams.paymentId
             });
-            const fallbackParams = mergePaymentData(urlParams);
+            const api = createApiClient();
+            const unresolvedParams = mergePaymentData(urlParams);
+            const fallbackParams = await resolveExecutionContracts(unresolvedParams, api, addDebugLog);
             const validationError = validateResolvedPaymentData(fallbackParams);
             if (validationError) {
               setError(fetchError.message || validationError);
+              setCurrentStep('error');
+              return;
+            }
+            if (!fallbackParams.contractAddress || !fallbackParams.tokenContract) {
+              setError(fetchError.message || 'Payment is missing contract details.');
               setCurrentStep('error');
               return;
             }
@@ -1312,10 +1395,17 @@ ${'='.repeat(80)}
         } else {
           // Full params provided in URL (legacy/fallback mode)
           addDebugLog('info', '📋 Full params provided in URL');
-          const mergedParams = mergePaymentData(urlParams);
+          const api = createApiClient();
+          const initialParams = mergePaymentData(urlParams);
+          const mergedParams = await resolveExecutionContracts(initialParams, api, addDebugLog);
           const validationError = validateResolvedPaymentData(mergedParams);
           if (validationError) {
             setError(validationError);
+            setCurrentStep('error');
+            return;
+          }
+          if (!mergedParams.contractAddress || !mergedParams.tokenContract) {
+            setError('Payment is missing contract details.');
             setCurrentStep('error');
             return;
           }
