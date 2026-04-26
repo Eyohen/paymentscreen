@@ -681,7 +681,8 @@ const fetchWithTimeout = async (url, options = {}, timeoutMs = 30000) => {
 
 // Enhanced API client (aligned with paymentAPI.js structure)
 const createApiClient = () => {
-  const apiUrl = import.meta.env.VITE_COINLEY_API_URL || 'https://hub.coinley.io';
+  const urlParams = new URLSearchParams(window.location.search);
+  const apiUrl = urlParams.get('apiUrl') || import.meta.env.VITE_COINLEY_API_URL || 'https://hub.coinley.io';
   const apiKey = import.meta.env.VITE_COINLEY_API_KEY || '';
   const apiSecret = import.meta.env.VITE_COINLEY_API_SECRET || '';
 
@@ -1820,16 +1821,17 @@ ${'='.repeat(80)}
       // Get contract ABI from backend (as designed in useTransactionHandling)
       const chainId = parseInt(paymentData.chainId);
 
+      const resolvedApiUrl = new URLSearchParams(window.location.search).get('apiUrl') || import.meta.env.VITE_COINLEY_API_URL || 'https://hub.coinley.io';
       addDebugLog('debug', '🔗 Fetching contract ABI from backend', {
         chainId,
-        apiUrl: import.meta.env.VITE_COINLEY_API_URL || 'https://hub.coinley.io',
+        apiUrl: resolvedApiUrl,
         endpoint: `/api/payments/contract/${chainId}`
       });
 
       let contractInfo;
       try {
         addDebugLog('debug', '🌐 API Environment Check', {
-          apiUrl: import.meta.env.VITE_COINLEY_API_URL || 'https://hub.coinley.io',
+          apiUrl: resolvedApiUrl,
           hasApiKey: !!(import.meta.env.VITE_COINLEY_API_KEY || ''),
           hasApiSecret: !!(import.meta.env.VITE_COINLEY_API_SECRET || ''),
           endpoint: `/api/payments/contract/${chainId}`,

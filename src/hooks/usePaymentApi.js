@@ -3,9 +3,11 @@ import { queryKeys } from '../config/queryClient';
 import usePaymentStore from '../stores/paymentStore';
 
 /**
- * API Configuration
+ * API Configuration — prefer apiUrl from deep-link query param so that payments
+ * created on a non-default backend (e.g. staging) are fetched from the right server.
  */
-const API_URL = import.meta.env.VITE_COINLEY_API_URL || 'https://hub.coinley.io';
+const _urlParams = new URLSearchParams(window.location.search);
+const API_URL = _urlParams.get('apiUrl') || import.meta.env.VITE_COINLEY_API_URL || 'https://hub.coinley.io';
 
 /**
  * API Client with error handling
