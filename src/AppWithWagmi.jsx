@@ -316,6 +316,26 @@ const validateResolvedPaymentData = (paymentData) => {
   return null;
 };
 
+const validateExecutionPaymentData = (paymentData) => {
+  const baseValidationError = validateResolvedPaymentData(paymentData);
+  if (baseValidationError) return baseValidationError;
+
+  if (!paymentData.contractAddress || !paymentData.tokenContract) {
+    return 'Payment is missing contract details.';
+  }
+
+  if (!paymentData.recipient1 || /^0x0{40}$/i.test(paymentData.recipient1)) {
+    return 'Payment configuration is incomplete. Recipient details could not be loaded.';
+  }
+
+  const recipient2Percentage = parseInt(paymentData.recipient2Percentage || '0', 10);
+  if (recipient2Percentage > 0 && (!paymentData.recipient2 || /^0x0{40}$/i.test(paymentData.recipient2))) {
+    return 'Payment configuration is incomplete. Fee recipient details could not be loaded.';
+  }
+
+  return null;
+};
+
 const getKnownTokenContract = (chainId, tokenSymbol) => {
   const numericChainId = parseChainIdValue(chainId);
   const symbol = normalizeText(tokenSymbol).toUpperCase();
@@ -608,37 +628,22 @@ const PaymentFlow = () => {
 
     const hydratePaymentData = async () => {
       const initialParams = getUrlParams();
-      const hasMinimalParams = initialParams.paymentId &&
-        !initialParams.contractAddress &&
-        !initialParams.tokenContract;
-
-      if (!hasMinimalParams) {
-        const mergedParams = await resolveExecutionContracts(mergePaymentData(initialParams), getApiCredentials());
-        const validationError = validateResolvedPaymentData(mergedParams);
-        if (validationError) {
-          setWriteError(validationError);
-        } else if (!mergedParams.contractAddress || !mergedParams.tokenContract) {
-          setWriteError('Payment is missing contract details.');
-        } else {
-          setPaymentData(mergedParams);
-          setWriteError(null);
-        }
-        return;
-      }
+      const apiCredentials = getApiCredentials();
 
       try {
-        const fetchedPayment = await getPaymentDetails(initialParams.paymentId, getApiCredentials());
+        let fetchedPayment = null;
+        if (initialParams.paymentId) {
+          fetchedPayment = await getPaymentDetails(initialParams.paymentId, apiCredentials);
+        }
+
         const mergedParams = await resolveExecutionContracts(
           mergePaymentData(initialParams, fetchedPayment),
-          getApiCredentials()
+          apiCredentials
         );
 
-        const validationError = validateResolvedPaymentData(mergedParams);
+        const validationError = validateExecutionPaymentData(mergedParams);
         if (validationError) {
           throw new Error(validationError);
-        }
-        if (!mergedParams.contractAddress || !mergedParams.tokenContract) {
-          throw new Error('Payment is missing contract details.');
         }
 
         if (!cancelled) {
@@ -997,8 +1002,9 @@ const PaymentFlow = () => {
       return;
     }
 
-    if (!paymentData.amountInWei && !isNumericAmount(paymentData.amount)) {
-      const errorMsg = 'Cannot execute payment: Payment amount is invalid.';
+    const executionValidationError = validateExecutionPaymentData(paymentData);
+    if (executionValidationError) {
+      const errorMsg = `Cannot execute payment: ${executionValidationError}`;
       console.error('❌', errorMsg);
       setWriteError(new Error(errorMsg));
       setCurrentStep('failure');

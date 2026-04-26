@@ -499,6 +499,26 @@ const validateResolvedPaymentData = (paymentData) => {
   return null;
 };
 
+const validateExecutionPaymentData = (paymentData) => {
+  const baseValidationError = validateResolvedPaymentData(paymentData);
+  if (baseValidationError) return baseValidationError;
+
+  if (!paymentData.contractAddress || !paymentData.tokenContract) {
+    return 'Payment is missing contract details.';
+  }
+
+  if (!paymentData.recipient1 || /^0x0{40}$/i.test(paymentData.recipient1)) {
+    return 'Payment configuration is incomplete. Recipient details could not be loaded.';
+  }
+
+  const recipient2Percentage = parseInt(paymentData.recipient2Percentage || '0', 10);
+  if (recipient2Percentage > 0 && (!paymentData.recipient2 || /^0x0{40}$/i.test(paymentData.recipient2))) {
+    return 'Payment configuration is incomplete. Fee recipient details could not be loaded.';
+  }
+
+  return null;
+};
+
 const getKnownTokenContract = (chainId, tokenSymbol) => {
   const numericChainId = parseChainIdValue(chainId);
   const symbol = normalizeText(tokenSymbol).toUpperCase();
@@ -1346,71 +1366,37 @@ ${'='.repeat(80)}
           return; // Exit early
         }
 
-        // ⭐ OPTIMIZED: Check if we have minimal params (QR code optimization)
-        const hasMinimalParams = urlParams.paymentId &&
-                                !urlParams.contractAddress &&
-                                !urlParams.tokenContract;
+        const api = createApiClient();
+        let fetchedPayment = null;
 
-        if (hasMinimalParams) {
-          addDebugLog('info', '🔄 Minimal params detected - fetching full payment details from backend...');
-
+        if (urlParams.paymentId) {
+          addDebugLog('info', '🔄 Fetching payment details from backend...', {
+            paymentId: urlParams.paymentId
+          });
           try {
-            const api = createApiClient();
-            const fetchedPayment = await api.getPaymentDetails(urlParams.paymentId);
-            const hydratedParams = mergePaymentData(urlParams, fetchedPayment);
-            const enrichedParams = await resolveExecutionContracts(hydratedParams, api, addDebugLog);
-
-            const validationError = validateResolvedPaymentData(enrichedParams);
-            if (validationError) {
-              throw new Error(validationError);
-            }
-
-            if (!enrichedParams.contractAddress || !enrichedParams.tokenContract) {
-              throw new Error('Payment is missing contract details.');
-            }
-
-            addDebugLog('success', '✅ Payment details enriched from backend', enrichedParams);
-            setPaymentData(enrichedParams);
+            fetchedPayment = await api.getPaymentDetails(urlParams.paymentId);
           } catch (fetchError) {
             addDebugLog('error', '❌ Failed to fetch payment details from backend', {
               error: fetchError.message,
               paymentId: urlParams.paymentId
             });
-            const api = createApiClient();
-            const unresolvedParams = mergePaymentData(urlParams);
-            const fallbackParams = await resolveExecutionContracts(unresolvedParams, api, addDebugLog);
-            const validationError = validateResolvedPaymentData(fallbackParams);
-            if (validationError) {
-              setError(fetchError.message || validationError);
-              setCurrentStep('error');
-              return;
-            }
-            if (!fallbackParams.contractAddress || !fallbackParams.tokenContract) {
-              setError(fetchError.message || 'Payment is missing contract details.');
-              setCurrentStep('error');
-              return;
-            }
-            setPaymentData(fallbackParams);
-          }
-        } else {
-          // Full params provided in URL (legacy/fallback mode)
-          addDebugLog('info', '📋 Full params provided in URL');
-          const api = createApiClient();
-          const initialParams = mergePaymentData(urlParams);
-          const mergedParams = await resolveExecutionContracts(initialParams, api, addDebugLog);
-          const validationError = validateResolvedPaymentData(mergedParams);
-          if (validationError) {
-            setError(validationError);
+            setError(fetchError.message || 'Failed to fetch payment details from backend.');
             setCurrentStep('error');
             return;
           }
-          if (!mergedParams.contractAddress || !mergedParams.tokenContract) {
-            setError('Payment is missing contract details.');
-            setCurrentStep('error');
-            return;
-          }
-          setPaymentData(mergedParams);
         }
+
+        const mergedInput = mergePaymentData(urlParams, fetchedPayment);
+        const resolvedPayment = await resolveExecutionContracts(mergedInput, api, addDebugLog);
+        const validationError = validateExecutionPaymentData(resolvedPayment);
+        if (validationError) {
+          setError(validationError);
+          setCurrentStep('error');
+          return;
+        }
+
+        addDebugLog('success', '✅ Payment details enriched from backend', resolvedPayment);
+        setPaymentData(resolvedPayment);
 
         addDebugLog('success', '✅ Payment data initialized');
         setCurrentStep((previousStep) => {
@@ -1671,12 +1657,9 @@ ${'='.repeat(80)}
         chainName: chain?.name
       });
 
-      if (!paymentData.contractAddress || !paymentData.tokenContract) {
-        throw new Error('Payment is missing contract details.');
-      }
-
-      if (!paymentData.amountInWei && !isNumericAmount(paymentData.amount)) {
-        throw new Error('Payment amount is invalid.');
+      const executionValidationError = validateExecutionPaymentData(paymentData);
+      if (executionValidationError) {
+        throw new Error(executionValidationError);
       }
 
       // Get token decimals and amount (using exact backend data)
