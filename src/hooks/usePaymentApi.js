@@ -5,7 +5,7 @@ import usePaymentStore from '../stores/paymentStore';
 /**
  * API Configuration
  */
-const API_URL = import.meta.env.VITE_COINLEY_API_URL || 'https://hub.coinley.io';
+const API_URL = import.meta.env.VITE_COINLEY_API_URL || 'https://hub.stablezact.com';
 
 /**
  * API Client with error handling

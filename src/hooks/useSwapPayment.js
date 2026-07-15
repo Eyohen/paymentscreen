@@ -3,7 +3,7 @@ import { useBridge } from './useLifiBridge';
 import { useWalletTokens } from './useWalletTokens';
 import { CHAIN_ID_TO_SHORT_NAME } from '../config/lifiConfig';
 
-const API_URL = import.meta.env.VITE_COINLEY_API_URL || 'https://hub.coinley.io';
+const API_URL = import.meta.env.VITE_COINLEY_API_URL || 'https://hub.stablezact.com';
 
 // Known USDC addresses on supported chains
 const KNOWN_USDC = {

@@ -99,7 +99,7 @@ const getApiCredentials = () => {
   return {
     apiKey: import.meta.env.VITE_COINLEY_API_KEY || '',
     apiSecret: import.meta.env.VITE_COINLEY_API_SECRET || '',
-    apiUrl: import.meta.env.VITE_COINLEY_API_URL || 'https://hub.coinley.io'
+    apiUrl: import.meta.env.VITE_COINLEY_API_URL || 'https://hub.stablezact.com'
   };
 };
 

@@ -58,6 +58,9 @@ const LIFI_HEADERS = {
     ...(LIFI_API_KEY ? { 'x-lifi-api-key': LIFI_API_KEY } : {})
 };
 const TOKEN_LIST_TTL = 10 * 60 * 1000;
+const WALLET_TOKEN_CACHE_TTL_MS = 30 * 1000;
+const WEAK_WALLET_TOKEN_CACHE_TTL_MS = 5 * 1000;
+const EMPTY_WALLET_TOKEN_CACHE_TTL_MS = 3 * 1000;
 const EVM_ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
 
 const formatBalance = (balance) => {
@@ -286,9 +289,17 @@ export const useWalletTokens = () => {
         console.log(`[WalletTokens] Fetching tokens for ${walletAddress} on chain ${numericChainId}`);
 
         const cacheKey = `${numericChainId}-${walletAddress.toLowerCase()}`;
-        if (balanceCache.current[cacheKey] && (Date.now() - balanceCache.current[cacheKey].time) < 30000) {
-            setWalletTokens(balanceCache.current[cacheKey].tokens);
-            return balanceCache.current[cacheKey].tokens;
+        const cachedBalanceEntry = balanceCache.current[cacheKey];
+        if (
+            cachedBalanceEntry &&
+            (Date.now() - cachedBalanceEntry.time) < (cachedBalanceEntry.ttl ?? WALLET_TOKEN_CACHE_TTL_MS)
+        ) {
+            console.log(
+                `[WalletTokens] Using cached token list for chain ${numericChainId} ` +
+                `(${cachedBalanceEntry.tokens.length} tokens, ttl=${cachedBalanceEntry.ttl ?? WALLET_TOKEN_CACHE_TTL_MS}ms)`
+            );
+            setWalletTokens(cachedBalanceEntry.tokens);
+            return cachedBalanceEntry.tokens;
         }
 
         const chainSlug = ALCHEMY_CHAIN_SLUGS[numericChainId];
@@ -526,9 +537,24 @@ export const useWalletTokens = () => {
                 return (b.usdValue || b.balance) - (a.usdValue || a.balance);
             });
 
-            console.log(`[WalletTokens] ${resolvedTokens.length} tokens after Li.Fi metadata resolution (payment: $${paymentAmount})`);
+            const missingUsdCount = resolvedTokens.filter(token =>
+                !token.isStablecoin &&
+                token.usdValue === undefined
+            ).length;
+            const cacheTtl = resolvedTokens.length === 0
+                ? EMPTY_WALLET_TOKEN_CACHE_TTL_MS
+                : missingUsdCount > 0
+                    ? WEAK_WALLET_TOKEN_CACHE_TTL_MS
+                    : WALLET_TOKEN_CACHE_TTL_MS;
 
-            balanceCache.current[cacheKey] = { tokens: resolvedTokens, time: Date.now() };
+            console.log(`[WalletTokens] ${resolvedTokens.length} tokens after Li.Fi metadata resolution (payment: $${paymentAmount})`);
+            console.log(`[WalletTokens] Price coverage: ${resolvedTokens.length - missingUsdCount}/${resolvedTokens.length} tokens priced`);
+
+            balanceCache.current[cacheKey] = {
+                tokens: resolvedTokens,
+                time: Date.now(),
+                ttl: cacheTtl
+            };
             setWalletTokens(resolvedTokens);
             return resolvedTokens;
         } catch (error) {

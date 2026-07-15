@@ -1,3 +1,4 @@
+import './lib/appInsights'  // Initialize App Insights first
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
@@ -10,6 +11,8 @@ if (typeof BigInt.prototype.toJSON === 'undefined') {
     return this.toString();
   };
 }
+
+console.log('[Coinley Paymentscreen] Build: paymentscreen-2026-04-09a-token-display-cache-fix');
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
