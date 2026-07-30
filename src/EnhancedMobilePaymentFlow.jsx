@@ -6,6 +6,7 @@ import { config } from './wagmiConfig';
 import { formatTransactionHash, getExplorerUrl, getExplorerName } from './utils/formatUtils';
 import { DEBUG_MODE, debugLog, debugError } from './utils/debugUtils';
 import { useSwapPayment } from './hooks/useSwapPayment';
+import { resolveApiBaseUrl } from './config/apiBase';
 import TokenSelectionStep from './components/TokenSelectionStep';
 import SwapProgressStep from './components/SwapProgressStep';
 
@@ -681,8 +682,10 @@ const fetchWithTimeout = async (url, options = {}, timeoutMs = 30000) => {
 
 // Enhanced API client (aligned with paymentAPI.js structure)
 const createApiClient = () => {
-  const urlParams = new URLSearchParams(window.location.search);
-  const apiUrl = urlParams.get('apiUrl') || import.meta.env.VITE_COINLEY_API_URL || 'https://hub.coinley.io';
+  // `apiUrl` comes from the URL, so it is validated against an allowlist before
+  // use — API credentials are sent to this host and the contract/deposit data
+  // it returns is trusted. See src/config/apiBase.js.
+  const apiUrl = resolveApiBaseUrl();
   const apiKey = import.meta.env.VITE_COINLEY_API_KEY || '';
   const apiSecret = import.meta.env.VITE_COINLEY_API_SECRET || '';
 
