@@ -1,13 +1,15 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../config/queryClient';
+import { resolveApiBaseUrl } from '../config/apiBase';
 import usePaymentStore from '../stores/paymentStore';
 
 /**
- * API Configuration — prefer apiUrl from deep-link query param so that payments
- * created on a non-default backend (e.g. staging) are fetched from the right server.
+ * API Configuration — the deep-link `apiUrl` query param lets a payment created
+ * on a non-default backend (e.g. staging) be fetched from the right server, but
+ * it is validated against an allowlist first: this client sends merchant API
+ * credentials and trusts the deposit address it receives back.
  */
-const _urlParams = new URLSearchParams(window.location.search);
-const API_URL = _urlParams.get('apiUrl') || import.meta.env.VITE_COINLEY_API_URL || 'https://hub.coinley.io';
+const API_URL = resolveApiBaseUrl();
 
 /**
  * API Client with error handling
