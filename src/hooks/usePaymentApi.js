@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '../config/queryClient';
 import { resolveApiBaseUrl } from '../config/apiBase';
+import { versionEndpoint } from '../config/apiVersion';
 import usePaymentStore from '../stores/paymentStore';
 
 /**
@@ -16,7 +17,9 @@ const API_URL = resolveApiBaseUrl();
  */
 const apiClient = {
   async get(endpoint) {
-    const response = await fetch(`${API_URL}${endpoint}`);
+    // Single place the version is applied, so endpoints added later cannot
+    // forget it.
+    const response = await fetch(`${API_URL}${versionEndpoint(endpoint)}`);
     if (!response.ok) {
       throw new Error(`API Error: ${response.status} ${response.statusText}`);
     }
@@ -24,7 +27,7 @@ const apiClient = {
   },
 
   async post(endpoint, data, headers = {}) {
-    const response = await fetch(`${API_URL}${endpoint}`, {
+    const response = await fetch(`${API_URL}${versionEndpoint(endpoint)}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
