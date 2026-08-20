@@ -7,6 +7,7 @@ import { formatTransactionHash, getExplorerUrl, getExplorerName } from './utils/
 import { DEBUG_MODE, debugLog, debugError } from './utils/debugUtils';
 import { useSwapPayment } from './hooks/useSwapPayment';
 import { resolveApiBaseUrl } from './config/apiBase';
+import { apiUrlFor, versionEndpoint } from './config/apiVersion';
 import TokenSelectionStep from './components/TokenSelectionStep';
 import SwapProgressStep from './components/SwapProgressStep';
 
@@ -691,7 +692,7 @@ const createApiClient = () => {
 
   return {
     async getContractInfo(chainId) {
-      const endpoint = `${apiUrl}/api/payments/contract/${chainId}`;
+      const endpoint = apiUrlFor(apiUrl, `/api/payments/contract/${chainId}`);
 
       addGlobalDebugLog('info', '🔗 Fetching contract ABI from backend', {
         endpoint,
@@ -782,7 +783,7 @@ const createApiClient = () => {
 
     async getPaymentDetails(paymentId) {
       // ⭐ Use PUBLIC endpoint - no authentication required (secure by design)
-      const endpoint = `${apiUrl}/api/payments/public/${paymentId}`;
+      const endpoint = apiUrlFor(apiUrl, `/api/payments/public/${paymentId}`);
       console.log('🔓 Fetching public payment details for:', paymentId);
 
       try {
@@ -829,7 +830,7 @@ const createApiClient = () => {
           headers['x-api-secret'] = apiSecret;
         }
 
-        const response = await fetch(`${apiUrl}/api/payments/process`, {
+        const response = await fetch(apiUrlFor(apiUrl, '/api/payments/process'), {
           method: 'POST',
           headers,
           body: JSON.stringify({
@@ -856,7 +857,7 @@ const createApiClient = () => {
     },
 
     async checkPaymentStatus(paymentId) {
-      const endpoint = `${apiUrl}/api/payments/status/${paymentId}`;
+      const endpoint = apiUrlFor(apiUrl, `/api/payments/status/${paymentId}`);
 
       try {
         const headers = {
@@ -886,7 +887,7 @@ const createApiClient = () => {
     },
 
     async verifyQRPayment(paymentId) {
-      const endpoint = `${apiUrl}/api/payments/verify-qr`;
+      const endpoint = apiUrlFor(apiUrl, '/api/payments/verify-qr');
 
       try {
         const headers = {
@@ -1828,7 +1829,7 @@ ${'='.repeat(80)}
       addDebugLog('debug', '🔗 Fetching contract ABI from backend', {
         chainId,
         apiUrl: resolvedApiUrl,
-        endpoint: `/api/payments/contract/${chainId}`
+        endpoint: versionEndpoint(`/api/payments/contract/${chainId}`)
       });
 
       let contractInfo;
@@ -1837,7 +1838,7 @@ ${'='.repeat(80)}
           apiUrl: resolvedApiUrl,
           hasApiKey: !!(import.meta.env.VITE_COINLEY_API_KEY || ''),
           hasApiSecret: !!(import.meta.env.VITE_COINLEY_API_SECRET || ''),
-          endpoint: `/api/payments/contract/${chainId}`,
+          endpoint: versionEndpoint(`/api/payments/contract/${chainId}`),
           currentDomain: window.location.origin,
           userAgent: navigator.userAgent
         });

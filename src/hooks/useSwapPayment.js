@@ -2,6 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { useRelayBridge } from './useRelayBridge';
 import { useWalletTokens } from './useWalletTokens';
 import { CHAIN_ID_TO_SHORT_NAME, isStablecoin } from '../config/relayConfig';
+import { apiUrlFor } from '../config/apiVersion';
 
 const API_URL = import.meta.env.VITE_COINLEY_API_URL || 'https://hub.coinley.io';
 
@@ -147,7 +148,7 @@ export const useSwapPayment = () => {
                 headers['X-Public-Key'] = apiCredentials.publicKey;
             }
 
-            const res = await fetch(`${API_URL}/api/deposits/create`, {
+            const res = await fetch(apiUrlFor(API_URL, '/api/deposits/create'), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', ...headers },
                 body: JSON.stringify({
@@ -261,7 +262,7 @@ export const useSwapPayment = () => {
             const maxAttempts = 120; // 10 minutes at 5s intervals
             for (let i = 0; i < maxAttempts; i++) {
                 try {
-                    const statusRes = await fetch(`${API_URL}/api/deposits/status/${deposit.paymentId}`);
+                    const statusRes = await fetch(apiUrlFor(API_URL, `/api/deposits/status/${deposit.paymentId}`));
                     if (statusRes.ok) {
                         const statusData = await statusRes.json();
                         const status = statusData?.payment?.status;

@@ -7,6 +7,7 @@ import { parseUnits, erc20Abi } from 'viem';
 import { useSwapPayment } from './hooks/useSwapPayment';
 import TokenSelectionStep from './components/TokenSelectionStep';
 import SwapProgressStep from './components/SwapProgressStep';
+import { apiUrlFor } from './config/apiVersion';
 
 // Create a QueryClient instance
 const queryClient = new QueryClient();
@@ -46,7 +47,7 @@ const notifyBackend = async (paymentId, transactionHash, networkName, senderAddr
       console.warn('⚠️ No API credentials found in URL parameters');
     }
 
-    const response = await fetch(`${apiUrl}/api/payments/process`, {
+    const response = await fetch(apiUrlFor(apiUrl, '/api/payments/process'), {
       method: 'POST',
       headers,
       body: JSON.stringify({
@@ -372,7 +373,7 @@ const getContractInfo = async (chainId, apiCredentials) => {
     headers['X-API-Secret'] = apiCredentials.apiSecret;
   }
 
-  const response = await fetch(`${apiCredentials.apiUrl}/api/payments/contract/${chainId}`, {
+  const response = await fetch(apiUrlFor(apiCredentials.apiUrl, `/api/payments/contract/${chainId}`), {
     method: 'GET',
     headers,
     mode: 'cors'
@@ -400,7 +401,7 @@ const getPaymentDetails = async (paymentId, apiCredentials) => {
     headers['X-API-Secret'] = apiCredentials.apiSecret;
   }
 
-  const response = await fetch(`${apiCredentials.apiUrl}/api/payments/public/${paymentId}`, {
+  const response = await fetch(apiUrlFor(apiCredentials.apiUrl, `/api/payments/public/${paymentId}`), {
     method: 'GET',
     headers,
     mode: 'cors'
