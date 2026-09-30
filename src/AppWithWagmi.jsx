@@ -8,6 +8,7 @@ import { useSwapPayment } from './hooks/useSwapPayment';
 import TokenSelectionStep from './components/TokenSelectionStep';
 import SwapProgressStep from './components/SwapProgressStep';
 import { apiUrlFor } from './config/apiVersion';
+import { mergeWithBackend, toBasisPoints, parseBasisPoints, validateSplit } from './utils/paymentTerms';
 
 // Create a QueryClient instance
 const queryClient = new QueryClient();
@@ -268,12 +269,8 @@ const extractBackendPaymentData = (fetchedPayment = {}) => {
     recipient1: normalizeText(fetchedPayment.merchantWallet || fetchedPayment.recipient1),
     recipient2: normalizeText(fetchedPayment.coinleyWallet || fetchedPayment.recipient2),
     recipient3: normalizeText(fetchedPayment.recipient3),
-    recipient1Percentage: fetchedPayment.merchantPercentage !== undefined && fetchedPayment.merchantPercentage !== null
-      ? (Number(fetchedPayment.merchantPercentage) * 100).toString()
-      : '',
-    recipient2Percentage: fetchedPayment.coinleyPercentage !== undefined && fetchedPayment.coinleyPercentage !== null
-      ? (Number(fetchedPayment.coinleyPercentage) * 100).toString()
-      : '',
+    recipient1Percentage: toBasisPoints(fetchedPayment.merchantPercentage),
+    recipient2Percentage: toBasisPoints(fetchedPayment.coinleyPercentage),
     tokenDecimals: normalizeText(
       tokenObject?.decimals ||
       fetchedPayment.tokenDecimals ||
@@ -282,28 +279,8 @@ const extractBackendPaymentData = (fetchedPayment = {}) => {
   };
 };
 
-const mergePaymentData = (urlParams, fetchedPayment = null) => {
-  const backend = fetchedPayment ? extractBackendPaymentData(fetchedPayment) : {};
-
-  return {
-    ...urlParams,
-    amount: pickFirstNumericAmount(urlParams.amount, backend.amount),
-    amountInWei: pickFirstNonEmpty(urlParams.amountInWei, backend.amountInWei),
-    token: urlParams.token || backend.token || '',
-    merchant: urlParams.merchant || backend.merchant || 'Demo Merchant',
-    network: urlParams.network || backend.network || '',
-    networkShortName: urlParams.networkShortName || backend.networkShortName || '',
-    contractAddress: urlParams.contractAddress || backend.contractAddress || '',
-    tokenContract: urlParams.tokenContract || backend.tokenContract || '',
-    chainId: urlParams.chainId || backend.chainId || '',
-    recipient1: urlParams.recipient1 || backend.recipient1 || '',
-    recipient2: urlParams.recipient2 || backend.recipient2 || '',
-    recipient3: urlParams.recipient3 || backend.recipient3 || '0x0000000000000000000000000000000000000000',
-    recipient1Percentage: urlParams.recipient1Percentage || backend.recipient1Percentage || '',
-    recipient2Percentage: urlParams.recipient2Percentage || backend.recipient2Percentage || '',
-    tokenDecimals: urlParams.tokenDecimals || backend.tokenDecimals || ''
-  };
-};
+const mergePaymentData = (urlParams, fetchedPayment = null) =>
+  mergeWithBackend(urlParams, fetchedPayment ? extractBackendPaymentData(fetchedPayment) : null);
 
 const validateResolvedPaymentData = (paymentData) => {
   if (!paymentData.chainId || !paymentData.network || !paymentData.token) {
@@ -329,7 +306,10 @@ const validateExecutionPaymentData = (paymentData) => {
     return 'Payment configuration is incomplete. Recipient details could not be loaded.';
   }
 
-  const recipient2Percentage = parseInt(paymentData.recipient2Percentage || '0', 10);
+  const splitError = validateSplit(paymentData);
+  if (splitError) return splitError;
+
+  const recipient2Percentage = parseBasisPoints(paymentData.recipient2Percentage);
   if (recipient2Percentage > 0 && (!paymentData.recipient2 || /^0x0{40}$/i.test(paymentData.recipient2))) {
     return 'Payment configuration is incomplete. Fee recipient details could not be loaded.';
   }
@@ -1165,10 +1145,12 @@ const PaymentFlow = () => {
         ? BigInt(paymentData.amountInWei)
         : parseUnits(paymentData.amount, decimals);
 
-      // ALWAYS use backend-provided percentages - NO FALLBACK CALCULATIONS
-      const productPercentage = parseInt(paymentData.recipient1Percentage) || 10000;
-      const platformPercentage = parseInt(paymentData.recipient2Percentage) || 0;
-      const networkPercentage = parseInt(paymentData.recipient3Percentage) || 0;
+      // Split comes from the backend only - no 10000/0 fallback
+      const productPercentage = parseBasisPoints(paymentData.recipient1Percentage);
+      const platformPercentage = parseBasisPoints(paymentData.recipient2Percentage);
+      const networkPercentage = parseBasisPoints(paymentData.recipient3Percentage || '0');
+      const splitError = validateSplit(paymentData);
+      if (splitError) throw new Error(splitError);
 
       console.log('🎯 Using EXACT backend data:', {
         paymentId: paymentData.paymentId,
