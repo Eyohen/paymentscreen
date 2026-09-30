@@ -8,6 +8,7 @@ import { DEBUG_MODE, debugLog, debugError } from './utils/debugUtils';
 import { useSwapPayment } from './hooks/useSwapPayment';
 import { resolveApiBaseUrl } from './config/apiBase';
 import { apiUrlFor, versionEndpoint } from './config/apiVersion';
+import { mergeWithBackend, toBasisPoints, parseBasisPoints, validateSplit } from './utils/paymentTerms';
 import TokenSelectionStep from './components/TokenSelectionStep';
 import SwapProgressStep from './components/SwapProgressStep';
 
@@ -455,39 +456,16 @@ const extractBackendSelection = (fetchedPayment = {}) => {
     ),
     recipient1: normalizeText(fetchedPayment.merchantWallet || fetchedPayment.recipient1),
     recipient2: normalizeText(fetchedPayment.coinleyWallet || fetchedPayment.recipient2),
-    recipient1Percentage: fetchedPayment.merchantPercentage !== undefined && fetchedPayment.merchantPercentage !== null
-      ? (Number(fetchedPayment.merchantPercentage) * 100).toString()
-      : '',
-    recipient2Percentage: fetchedPayment.coinleyPercentage !== undefined && fetchedPayment.coinleyPercentage !== null
-      ? (Number(fetchedPayment.coinleyPercentage) * 100).toString()
-      : '',
+    recipient1Percentage: toBasisPoints(fetchedPayment.merchantPercentage),
+    recipient2Percentage: toBasisPoints(fetchedPayment.coinleyPercentage),
     tokenDecimals,
     network,
     networkShortName
   };
 };
 
-const mergePaymentData = (urlParams, fetchedPayment = null) => {
-  const backend = fetchedPayment ? extractBackendSelection(fetchedPayment) : {};
-
-  return {
-    ...urlParams,
-    contractAddress: urlParams.contractAddress || backend.contractAddress || '',
-    tokenContract: urlParams.tokenContract || backend.tokenContract || '',
-    chainId: urlParams.chainId || backend.chainId || '',
-    amount: pickFirstNumericAmount(urlParams.amount, backend.amount),
-    amountInWei: pickFirstNonEmpty(urlParams.amountInWei, backend.amountInWei),
-    token: urlParams.token || backend.token || '',
-    merchant: urlParams.merchant || backend.merchant || 'Demo Merchant',
-    recipient1: urlParams.recipient1 || backend.recipient1 || '',
-    recipient2: urlParams.recipient2 || backend.recipient2 || '',
-    recipient1Percentage: urlParams.recipient1Percentage || backend.recipient1Percentage || '10000',
-    recipient2Percentage: urlParams.recipient2Percentage || backend.recipient2Percentage || '0',
-    tokenDecimals: urlParams.tokenDecimals || backend.tokenDecimals || '',
-    network: urlParams.network || backend.network || '',
-    networkShortName: urlParams.networkShortName || backend.networkShortName || ''
-  };
-};
+const mergePaymentData = (urlParams, fetchedPayment = null) =>
+  mergeWithBackend(urlParams, fetchedPayment ? extractBackendSelection(fetchedPayment) : null);
 
 const validateResolvedPaymentData = (paymentData) => {
   if (!paymentData.chainId || !paymentData.network || !paymentData.token) {
@@ -513,7 +491,10 @@ const validateExecutionPaymentData = (paymentData) => {
     return 'Payment configuration is incomplete. Recipient details could not be loaded.';
   }
 
-  const recipient2Percentage = parseInt(paymentData.recipient2Percentage || '0', 10);
+  const splitError = validateSplit(paymentData);
+  if (splitError) return splitError;
+
+  const recipient2Percentage = parseBasisPoints(paymentData.recipient2Percentage);
   if (recipient2Percentage > 0 && (!paymentData.recipient2 || /^0x0{40}$/i.test(paymentData.recipient2))) {
     return 'Payment configuration is incomplete. Fee recipient details could not be loaded.';
   }
@@ -1873,18 +1854,22 @@ ${'='.repeat(80)}
 
       const { abi } = contractInfo;
 
+      const splitError = validateSplit(paymentData);
+      if (splitError) throw new Error(splitError);
+
       // Create payment details tuple (exact structure from useTransactionHandling)
       const paymentDetails = {
         token: paymentData.tokenContract || paymentData.tokenAddress,
         amount: amountInUnits,
         // CRITICAL: Use splitterPaymentId first for blockchain verification
         paymentId: paymentData.splitterPaymentId || paymentData.paymentId,
-        recipient1: paymentData.recipient1 || paymentData.merchantWallet || '0x0000000000000000000000000000000000000000',
-        recipient2: paymentData.recipient2 || paymentData.coinleyWallet || '0x0000000000000000000000000000000000000000',
+        recipient1: paymentData.recipient1,
+        recipient2: paymentData.recipient2 || '0x0000000000000000000000000000000000000000',
         recipient3: paymentData.recipient3 || '0x0000000000000000000000000000000000000000',
-        recipient1Percentage: BigInt(paymentData.recipient1Percentage || 10000),
-        recipient2Percentage: BigInt(paymentData.recipient2Percentage || 0),
-        recipient3Percentage: BigInt(paymentData.recipient3Percentage || 0)
+        // Split comes from the backend only; validateSplit rejected missing values
+        recipient1Percentage: BigInt(parseBasisPoints(paymentData.recipient1Percentage)),
+        recipient2Percentage: BigInt(parseBasisPoints(paymentData.recipient2Percentage)),
+        recipient3Percentage: BigInt(parseBasisPoints(paymentData.recipient3Percentage || '0'))
       };
 
       addDebugLog('debug', '🔍 Split payment details prepared', {
