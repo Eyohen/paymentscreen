@@ -8,7 +8,7 @@ import { useSwapPayment } from './hooks/useSwapPayment';
 import TokenSelectionStep from './components/TokenSelectionStep';
 import SwapProgressStep from './components/SwapProgressStep';
 import { apiUrlFor } from './config/apiVersion';
-import { mergeWithBackend, toBasisPoints, parseBasisPoints, validateSplit } from './utils/paymentTerms';
+import { mergeWithBackend, toBasisPoints, parseBasisPoints, validateSplit, stripBackendOnlyFields } from './utils/paymentTerms';
 
 // Create a QueryClient instance
 const queryClient = new QueryClient();
@@ -432,7 +432,9 @@ const getUrlParams = () => {
 // Main Payment Component
 const PaymentFlow = () => {
   const [currentStep, setCurrentStep] = useState('approval');
-  const [paymentData, setPaymentData] = useState(getUrlParams());
+  // Money fields stay empty until the backend payment loads (backendLoaded)
+  const [paymentData, setPaymentData] = useState(() => stripBackendOnlyFields(getUrlParams()));
+  const [backendLoaded, setBackendLoaded] = useState(false);
   const [processing, setProcessing] = useState(false);
 
   const { address, isConnected, chain } = useAccount();
@@ -629,12 +631,16 @@ const PaymentFlow = () => {
 
         if (!cancelled) {
           setPaymentData(mergedParams);
+          setBackendLoaded(true);
           setWriteError(null);
         }
       } catch (error) {
         if (!cancelled) {
           console.error('❌ Failed to hydrate payment details:', error);
-          setWriteError(error.message || 'Failed to hydrate payment details.');
+          // Error object: the UI reads writeError.message. Without backend terms
+          // there is nothing safe to pay, so show the failure screen.
+          setWriteError(new Error('Payment details could not be loaded. Please scan a fresh payment QR code.'));
+          setCurrentStep('failure');
         }
       }
     };
@@ -799,6 +805,13 @@ const PaymentFlow = () => {
 
       console.log('🎯 Connection successful with address:', effectiveAddress);
 
+      // Never start a payment before the backend terms have loaded: the
+      // approval below runs in a timer that keeps this render's paymentData.
+      if (!backendLoaded) {
+        console.log('⏳ Waiting for payment details from the backend before starting payment');
+        return;
+      }
+
       // Check if we're on the right chain
       const targetChainId = parseInt(paymentData.chainId);
       if (chain?.id !== targetChainId) {
@@ -835,7 +848,7 @@ const PaymentFlow = () => {
         }
       }
     }
-  }, [isConnected, effectiveAddress, chain, paymentData.chainId, processing, connectors, connect, connectionAttempts, hasStartedApproval, lastConnectionTime, connectionStable]);
+  }, [isConnected, effectiveAddress, chain, paymentData.chainId, processing, connectors, connect, connectionAttempts, hasStartedApproval, lastConnectionTime, connectionStable, backendLoaded]);
 
   // Enhanced Trust Wallet specific debugging and connection
   useEffect(() => {
@@ -941,6 +954,15 @@ const PaymentFlow = () => {
 
   // Execute approval and payment in sequence
   const executeApprovalAndPayment = async () => {
+    if (!backendLoaded) {
+      setWriteError(new Error('Payment details could not be loaded. Please scan a fresh payment QR code.'));
+      setCurrentStep('failure');
+      setProcessing(false);
+      setIsWriting(false);
+      setHasStartedApproval(false);
+      return;
+    }
+
     // Critical: Check if we have an address before proceeding
     if (!effectiveAddress) {
       const errorMsg = 'Cannot execute payment: No wallet address available. Please reconnect your wallet.';
@@ -1275,7 +1297,8 @@ const PaymentFlow = () => {
     setCurrentStep('approval');
     setProcessing(false);
     disconnect();
-    setPaymentData(getUrlParams());
+    // Keep the backend-loaded payment; resetting to URL params would bring back
+    // URL-controlled money fields.
 
     // Reconnect after a short delay
     setTimeout(() => {
