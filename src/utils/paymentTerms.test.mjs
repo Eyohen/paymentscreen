@@ -62,3 +62,13 @@ test('validateSplit refuses a missing split instead of defaulting to 10000/0', (
   assert.match(validateSplit({ recipient1Percentage: '0', recipient2Percentage: '10000' }), /incomplete/);
   assert.match(validateSplit({ recipient1Percentage: '9900', recipient2Percentage: '200' }), /exceeds/);
 });
+
+test('stripBackendOnlyFields drops every money field from the URL, keeps the rest', async () => {
+  const { stripBackendOnlyFields } = await import('./paymentTerms.js');
+  const url = { paymentId: 'p1', merchant: 'Evil', amount: '0.01', recipient1: '0xAttacker', recipient1Percentage: '10000', contractAddress: '0xEvil', callbackUrl: 'https://shop' };
+  const s = stripBackendOnlyFields(url);
+  for (const field of BACKEND_ONLY_FIELDS) assert.equal(s[field], '', field);
+  assert.equal(s.merchant, '');
+  assert.equal(s.paymentId, 'p1');
+  assert.equal(s.callbackUrl, 'https://shop');
+});

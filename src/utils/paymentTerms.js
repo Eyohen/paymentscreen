@@ -56,6 +56,16 @@ export const mergeWithBackend = (urlParams, backend) => {
   return merged;
 };
 
+// Until the backend payment has loaded, keep only the non-money URL params
+// (paymentId, callbacks). The desktop flow used to start from the raw URL and
+// could auto-pay with it if the backend fetch failed or was still in flight.
+export const stripBackendOnlyFields = (urlParams) => {
+  const stripped = { ...urlParams };
+  for (const field of BACKEND_ONLY_FIELDS) stripped[field] = '';
+  stripped.merchant = '';
+  return stripped;
+};
+
 // Split percentages must be present, whole basis points, and recipient1 must
 // receive something. Returns an error message or null.
 export const validateSplit = (paymentData) => {
