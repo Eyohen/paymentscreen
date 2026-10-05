@@ -7,7 +7,7 @@ name: Semgrep (branch alerts)
 
 on:
   push:
-    branches: [staging]
+    branches: [staging, main]
   workflow_dispatch:
 
 permissions:
