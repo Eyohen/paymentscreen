@@ -1,0 +1,76 @@
+# Stablezact custom Semgrep rules — paymentscreen (hosted checkout).
+#
+# This page builds and signs the customer's payment transaction, so anything it
+# takes from the URL instead of the server decides where money goes. These rules
+# encode the P0 invariants from AGENTS.md that generic SAST does not know about.
+#
+# Pilot posture: report-only. The CI job uploads findings to the Security tab
+# and never blocks a merge.
+#
+# Test fixtures: .semgrep/stablezact.js (ruleid:/ok: annotations).
+# Run: semgrep --test --config .semgrep/stablezact.yml .semgrep/stablezact.js
+
+rules:
+  # --------------------------------------------------------------------------
+  - id: stablezact-no-money-field-from-url
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: >
+      A settlement/money field is being read from the URL. Recipients, the
+      splitter/token contract, split percentages and amounts must come from the
+      server payment for this id, never from the query string or the merged
+      urlParams object — a crafted link on our domain would otherwise redirect a
+      customer's funds. (AGENTS.md: URL-over-server for money fields is P0.)
+    metadata:
+      category: security
+      asset: money-destination
+      confidence: HIGH
+      references:
+        - AGENTS.md
+    patterns:
+      - pattern-either:
+          # raw read of a money field off a URLSearchParams getter
+          - pattern: $Q.get("recipient1")
+          - pattern: $Q.get("recipient2")
+          - pattern: $Q.get("merchantWallet")
+          - pattern: $Q.get("coinleyWallet")
+          - pattern: $Q.get("contractAddress")
+          - pattern: $Q.get("splitterContractAddress")
+          - pattern: $Q.get("merchantPercentage")
+          - pattern: $Q.get("coinleyPercentage")
+          - pattern: $Q.get("amountInWei")
+          # URL value winning over the server via a precedence fallback
+          - patterns:
+              - pattern-either:
+                  - pattern: $U.recipient1 || $X
+                  - pattern: $U.recipient2 || $X
+                  - pattern: $U.merchantWallet || $X
+                  - pattern: $U.coinleyWallet || $X
+                  - pattern: $U.contractAddress || $X
+                  - pattern: $U.splitterContractAddress || $X
+                  - pattern: $U.merchantPercentage || $X
+                  - pattern: $U.coinleyPercentage || $X
+              - metavariable-regex:
+                  metavariable: $U
+                  regex: ^(urlParams|params|urlData|urlInput|query|mergedInput)$
+
+  # --------------------------------------------------------------------------
+  - id: stablezact-no-unvalidated-apiurl-from-query
+    languages: [javascript, typescript]
+    severity: WARNING
+    message: >
+      The API base host is being taken from the apiUrl query param directly.
+      It must go through resolveApiBaseUrl() (src/config/apiBase.js), which only
+      accepts an https URL on the allowlist; otherwise an attacker points the
+      page at their own backend. (AGENTS.md: apiUrl must be validated.)
+    metadata:
+      category: security
+      asset: api-host
+      confidence: MEDIUM
+      references:
+        - AGENTS.md
+    paths:
+      exclude:
+        - "src/config/apiBase.js"   # the sanctioned resolver/validator
+    patterns:
+      - pattern: $Q.get("apiUrl")
