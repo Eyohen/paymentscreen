@@ -4,6 +4,8 @@
 // never from the URL: a crafted link on our domain could otherwise send the
 // customer's funds to an attacker, and the order would still never complete.
 export const BACKEND_ONLY_FIELDS = [
+  'splitterVersion',
+  'signedTerms',
   'amount',
   'amountInWei',
   'token',

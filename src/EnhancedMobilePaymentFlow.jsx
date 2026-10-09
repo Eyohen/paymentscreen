@@ -439,6 +439,7 @@ const extractBackendSelection = (fetchedPayment = {}) => {
   );
 
   return {
+    splitterVersion: fetchedPayment.splitterVersion || 1,
     contractAddress: normalizeText(
       fetchedPayment.splitterContractAddress ||
       fetchedPayment.contractAddress ||
@@ -1631,6 +1632,7 @@ ${'='.repeat(80)}
     }
 
     try {
+      if (Number(paymentData.splitterVersion) === 2) throw new Error('Open this test invoice on desktop to pay.');
       setProcessing(true);
       setError('');
       setCurrentStep('processing');
@@ -2601,6 +2603,7 @@ ${'='.repeat(80)}
                     error={swapPayment.swapError}
                     onConfirm={async () => {
                       setCurrentStep('swapProcessing');
+                      if (Number(paymentData?.splitterVersion) === 2) { setError('Open this test invoice on desktop to pay directly on Base.'); setCurrentStep('failure'); return; }
                       const result = await swapPayment.executeSwapPayment({
                         token: swapPayment.selectedToken,
                         destChainId: parseInt(paymentData?.chainId),

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { WagmiProvider, useAccount, useConnect, useDisconnect, useSwitchChain } from 'wagmi';
-import { readContract, writeContract, simulateContract } from '@wagmi/core';
+import { readContract, writeContract, simulateContract, getAccount, waitForTransactionReceipt } from '@wagmi/core';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { config, getChainByNetwork, networkToChainId } from './wagmiConfig';
 import { parseUnits, erc20Abi } from 'viem';
@@ -9,6 +9,9 @@ import TokenSelectionStep from './components/TokenSelectionStep';
 import SwapProgressStep from './components/SwapProgressStep';
 import { apiUrlFor } from './config/apiVersion';
 import { mergeWithBackend, toBasisPoints, parseBasisPoints, validateSplit, stripBackendOnlyFields } from './utils/paymentTerms';
+
+import { executeSignedPayment } from './utils/signedPayment';
+import { resolveApiBaseUrl } from './config/apiBase';
 
 // Create a QueryClient instance
 const queryClient = new QueryClient();
@@ -101,7 +104,7 @@ const getApiCredentials = () => {
   return {
     apiKey: import.meta.env.VITE_COINLEY_API_KEY || '',
     apiSecret: import.meta.env.VITE_COINLEY_API_SECRET || '',
-    apiUrl: import.meta.env.VITE_COINLEY_API_URL || 'https://hub.coinley.io'
+    apiUrl: resolveApiBaseUrl()
   };
 };
 
@@ -249,6 +252,8 @@ const extractBackendPaymentData = (fetchedPayment = {}) => {
       networkShortName
     ),
     networkShortName,
+    splitterVersion: fetchedPayment.splitterVersion || 1,
+    signedTerms: fetchedPayment.signedTerms || null,
     contractAddress: normalizeText(
       fetchedPayment.splitterContractAddress ||
       fetchedPayment.contractAddress ||
@@ -1027,6 +1032,44 @@ const PaymentFlow = () => {
       setIsWriting(true);
       setWriteError(null);
 
+      if (Number(paymentData.splitterVersion) === 2) {
+        const publicKey = new URLSearchParams(window.location.search).get('publicKey') || import.meta.env.VITE_COINLEY_PUBLIC_KEY;
+        if (!publicKey?.startsWith('pk_')) throw new Error('This test payment needs a merchant public key. Request a new checkout link.');
+        const apiBase = resolveApiBaseUrl();
+        const post = async (endpoint, body) => {
+          const response = await fetch(apiUrlFor(apiBase, endpoint), {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Public-Key': publicKey }, body: JSON.stringify(body)
+          });
+          const result = await response.json();
+          if (!response.ok || result.success === false) throw new Error(result.error || 'Payment confirmation is unavailable');
+          return result;
+        };
+        const hash = await executeSignedPayment({
+          paymentId: paymentData.paymentId, terms: paymentData.signedTerms, payer: effectiveAddress,
+          requestApproval: async payer => (await post(`/api/payments/${paymentData.paymentId}/authorization`, { payer })).authorization,
+          verify: async transactionHash => {
+            await post('/api/payments/process', { paymentId: paymentData.paymentId, transactionHash, network: 'base', senderAddress: effectiveAddress });
+            const response = await fetch(apiUrlFor(apiBase, `/api/payments/public/${paymentData.paymentId}`), { cache: 'no-store' });
+            const result = await response.json();
+            if (!response.ok || result.payment?.status !== 'completed') throw new Error('Payment submitted. Confirmation is still pending. Keep the transaction reference.');
+          },
+          actions: {
+            getAccount: () => getAccount(config),
+            readContract: args => readContract(config, args),
+            simulateContract: args => simulateContract(config, args),
+            writeContract: args => writeContract(config, args),
+            waitForTransactionReceipt: args => waitForTransactionReceipt(config, args)
+          },
+          onSubmitted: setPaymentHash
+        });
+        setPaymentHash(hash);
+        setWriteSuccess(true);
+        setCurrentStep('success');
+        setProcessing(false);
+        setIsWriting(false);
+        return;
+      }
+
       // Step 0: Check user's token balance first
       const decimals = parseInt(paymentData.tokenDecimals) || getTokenDecimals(paymentData.token);
       const amountInUnits = paymentData.amountInWei && paymentData.amountInWei !== ''
@@ -1386,6 +1429,7 @@ const PaymentFlow = () => {
               onClick={async () => {
                 setSwapMode(true);
                 const targetChainId = parseInt(paymentData.chainId);
+                if (Number(paymentData.splitterVersion) === 2) throw new Error('This test invoice supports direct Base payments only.');
                 await swapPayment.discoverTokens(effectiveAddress, targetChainId, parseFloat(paymentData.amount));
                 setCurrentStep('tokenSelection');
               }}
